@@ -1,0 +1,5 @@
+requests==2.32.3
+pandas==2.2.3
+openpyxl==3.1.5
+yfinance==0.2.51
+google-genai==1.2.0
