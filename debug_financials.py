@@ -28,10 +28,23 @@ except Exception as e:
     print(f"UFRS (group 2) başarısız: {e}")
 
 print()
-print("=== financial_group='1' (XI_29) ile THYAO çekiliyor (yedek deneme) ===")
+print("=== financial_group='1' (XI_29) ile THYAO çekiliyor ===")
 try:
     df2 = fetch_financials(symbols="THYAO", start_year=2024, end_year=2025, financial_group='1')
     print("Sütunlar:", df2.columns.tolist())
     print("Toplam satır sayısı:", len(df2))
+    print()
+    print("TÜM kalemler (kod - Türkçe isim):")
+    for _, row in df2.iterrows():
+        print(f"  {row.get('FINANCIAL_ITEM_CODE')}\t{row.get('FINANCIAL_ITEM_NAME_TR')}")
 except Exception as e:
     print(f"XI_29 (group 1) başarısız: {e}")
+
+print()
+print("=== financial_group='3' (UFRS_K) ile THYAO çekiliyor (ek deneme) ===")
+try:
+    df3 = fetch_financials(symbols="THYAO", start_year=2024, end_year=2025, financial_group='3')
+    print("Sütunlar:", df3.columns.tolist())
+    print("Toplam satır sayısı:", len(df3))
+except Exception as e:
+    print(f"UFRS_K (group 3) başarısız: {e}")
