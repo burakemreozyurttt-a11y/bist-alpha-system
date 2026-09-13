@@ -1,20 +1,29 @@
 """
-BIST FUNDAMENTAL ALPHA SYSTEM — Faz 1 (MVP)
+BIST FUNDAMENTAL ALPHA SYSTEM — Faz 1 (MVP) — v2
 =============================================
 Her hafta içi günü çalışır (GitHub Actions cron ile tetiklenir):
   1) KAP'tan tüm BIST hisse kodlarını çeker (olmazsa yedek listeyi kullanır)
-  2) Round 1: yfinance ile sayısal (LLM'siz) ön eleme yapar -> ~20-25 aday
-  3) Round 2: her adayı Gemini'ye gönderip Alpha Score / Fair Value hesaplatır
+  2) Round 1: İş Yatırım'dan fiyat/hacim verisiyle LİKİDİTE taraması yapar
+     -> en likit ~20-25 hisse Round 2'ye aday gösterilir
+  3) Round 2: sadece bu adaylar için yfinance'tan fundamental oranlar (best
+     effort — bulunamazsa N/A) çekilir ve Gemini'ye gönderilip Alpha Score /
+     Fair Value hesaplatılır
   4) TOP 10 + Reserve (11-15) tablosunu oluşturur, önceki günle kıyaslar
   5) Raporu Telegram'a yollar
   6) state.json dosyasını günceller (bir sonraki çalıştırmanın "hafızası")
 
+v2 NOTU: İlk sürümde tüm evren (720 hisse) için yfinance kullanılıyordu, ama
+Yahoo Finance GitHub Actions'ın paylaşımlı IP'lerini tamamen engelledi (boş
+yanıt / 429). Bu yüzden Round 1 artık İş Yatırım'ın (isyatirimhisse
+kütüphanesi) fiyat verisini kullanıyor, yfinance sadece Round 2'nin az
+sayıdaki (~20) finalistine, best-effort olarak uygulanıyor.
+
 Notlar / bilinen sınırlamalar (MVP aşaması):
-  - Round 1 filtresi basit bir sayısal skor kullanır (sektöre özel modeller
-    Faz 3+ içinde eklenecek — attığın orijinal sistemdeki "Sector Router"
-    henüz burada yok).
-  - yfinance'ın BIST şirketleri için bazı alanları (özellikle ROE, borç
-    oranları) eksik/hatalı dönebilir. Eksik veri N/A olarak işaretlenir,
+  - Round 1'de henüz gerçek fundamental oranlar (F/K, ROE vb.) YOK, sadece
+    likidite bazlı bir ön eleme var. Sektöre özel modeller ve tam fundamental
+    Round 1 filtresi Faz 1.1 / Faz 3'te İş Yatırım'ın fetch_financials
+    fonksiyonuyla eklenecek.
+  - yfinance eksik/hatalı veri dönebilir; eksik veri N/A olarak işaretlenir,
     uydurulmaz.
   - Multi-Agent (Bull/Bear/CRO) katmanı henüz yok — Faz 3'te eklenecek.
 """
@@ -31,6 +40,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import requests
 import yfinance as yf
+from isyatirimhisse import fetch_stock_data as isy_fetch_stock_data
 from google import genai
 from google.genai import types
 
@@ -103,73 +113,82 @@ def get_bist_tickers():
 
 
 # --------------------------------------------------------------------------
-# 2) ROUND 1 — SAYISAL (LLM'SİZ) ÖN ELEME
+# 2) ROUND 1 — LİKİDİTE TARAMASI (İş Yatırım verisiyle, LLM'siz)
 # --------------------------------------------------------------------------
-_yf_session = None
+IY_MIN_DELAY = 0.5                # istekler arası minimum bekleme (saniye)
+IY_MAX_DELAY = 1.2                # istekler arası maksimum bekleme (saniye)
+IY_MAX_RETRIES = 2
+IY_LOOKBACK_DAYS = 20             # kaç günlük fiyat/hacim geçmişine bakılacak
+
+_debug_columns_printed = False    # ilk başarılı çekimde sütun isimlerini bir kez loglamak için
 
 
-def _get_yf_session():
-    """Tüm istekler için tek, gerçek tarayıcı gibi görünen bir session paylaşılır."""
-    global _yf_session
-    if _yf_session is None:
-        import requests as _requests
-        _yf_session = _requests.Session()
-        _yf_session.headers.update(YF_SESSION_HEADERS)
-    return _yf_session
+def _pick_column(df, candidates):
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
 
 
-def fetch_yf_snapshot(ticker):
-    """Tek bir hisse için yfinance'tan temel verileri çeker.
-    Yahoo rate-limit uyguladığında (429 / boş veri) birkaç kez, artan
-    bekleme süreleriyle tekrar dener."""
-    yf_ticker = f"{ticker}.IS"
+def fetch_price_snapshot(ticker):
+    """İş Yatırım'dan son ~20 günlük fiyat/hacim verisini çeker, güncel fiyatı
+    ve ortalama günlük TL hacmini (likidite göstergesi) hesaplar."""
+    global _debug_columns_printed
 
-    for attempt in range(1, YF_MAX_RETRIES + 1):
+    end_date = datetime.now(TR_TZ).strftime("%d-%m-%Y")
+    start_date = (datetime.now(TR_TZ) - timedelta(days=IY_LOOKBACK_DAYS * 2)).strftime("%d-%m-%Y")
+
+    for attempt in range(1, IY_MAX_RETRIES + 1):
         try:
-            t = yf.Ticker(yf_ticker, session=_get_yf_session())
-            info = t.info or {}
-            price = info.get("currentPrice") or info.get("regularMarketPrice")
-            avg_volume = info.get("averageVolume") or info.get("averageDailyVolume10Day")
-            if not price or not avg_volume:
-                # Veri boş geldi -> muhtemelen rate limit, tekrar dene
-                raise ValueError("Boş veri (muhtemel rate limit)")
+            df = isy_fetch_stock_data(symbols=ticker, start_date=start_date, end_date=end_date)
+            if df is None or df.empty:
+                raise ValueError("Boş veri döndü")
+
+            if not _debug_columns_printed:
+                print(f"[DEBUG] İş Yatırım'dan dönen örnek sütunlar ({ticker}): {df.columns.tolist()}")
+                _debug_columns_printed = True
+
+            close_col = _pick_column(df, ["HGDG_KAPANIS", "KAPANIS", "CLOSING_TL", "CLOSING"])
+            vol_try_col = _pick_column(df, ["HGDG_HACIM_TL", "HACIM_TL", "VOLUME_TL"])
+            vol_lot_col = _pick_column(df, ["HGDG_HACIM_LOT", "HACIM_LOT", "VOLUME_LOT", "HGDG_HACIM"])
+
+            if close_col is None:
+                raise ValueError(f"Kapanış fiyatı sütunu bulunamadı. Mevcut sütunlar: {df.columns.tolist()}")
+
+            last_price = float(df[close_col].iloc[-1])
+
+            if vol_try_col is not None:
+                avg_turnover = float(df[vol_try_col].tail(IY_LOOKBACK_DAYS).mean())
+            elif vol_lot_col is not None:
+                avg_turnover = float((df[close_col] * df[vol_lot_col]).tail(IY_LOOKBACK_DAYS).mean())
+            else:
+                avg_turnover = None  # likidite hesaplanamıyor, filtrede elenecek
+
             return {
                 "ticker": ticker,
-                "name": info.get("longName", ticker),
-                "sector": info.get("sector", "N/A"),
-                "industry": info.get("industry", "N/A"),
-                "price": price,
-                "market_cap": info.get("marketCap"),
-                "avg_daily_turnover_try": price * avg_volume,
-                "trailing_pe": info.get("trailingPE"),
-                "forward_pe": info.get("forwardPE"),
-                "price_to_book": info.get("priceToBook"),
-                "roe": info.get("returnOnEquity"),
-                "revenue_growth": info.get("revenueGrowth"),
-                "earnings_growth": info.get("earningsGrowth"),
-                "debt_to_equity": info.get("debtToEquity"),
-                "dividend_yield": info.get("dividendYield"),
+                "price": last_price,
+                "avg_daily_turnover_try": avg_turnover,
             }
         except Exception as e:
-            if attempt < YF_MAX_RETRIES:
-                backoff = YF_BACKOFF_BASE * (2 ** (attempt - 1))
-                time.sleep(backoff)
+            if attempt < IY_MAX_RETRIES:
+                time.sleep(3)
             else:
-                print(f"  {ticker}: {YF_MAX_RETRIES} denemede de veri alınamadı ({e})")
+                print(f"  {ticker}: fiyat verisi alınamadı ({e})")
                 return None
     return None
 
 
 def round1_screen(tickers):
-    """Tüm evreni SERİ (paralel değil) şekilde, aralıklı isteklerle çeker,
-    likidite filtresi uygular ve basit bir sayısal kompozit skorla en iyi
-    MAX_DEEP_CANDIDATES adayı seçer."""
+    """Tüm evreni İş Yatırım'dan seri şekilde çeker, likidite filtresi
+    uygular ve en likit MAX_DEEP_CANDIDATES hisseyi Round 2'ye aday gösterir.
+    (Not: F/K, ROE gibi fundamental oranlar burada YOK — onlar sadece
+    Round 2'deki finalistler için yfinance'tan çekiliyor, bkz. round2_deep_analysis.)"""
     rows = []
     total = len(tickers)
     consecutive_failures = 0
 
     for i, tk in enumerate(tickers, 1):
-        res = fetch_yf_snapshot(tk)
+        res = fetch_price_snapshot(tk)
         if res:
             rows.append(res)
             consecutive_failures = 0
@@ -179,19 +198,17 @@ def round1_screen(tickers):
         if i % 25 == 0 or i == total:
             print(f"  ...{i}/{total} hisse tarandı (şu ana kadar başarılı: {len(rows)})")
 
-        # Yahoo bizi tamamen bloke ettiyse (örn. 40 hisse üst üste başarısız),
-        # saatlerce tek tek denemek yerine erken durup net bir mesajla çık.
         if consecutive_failures >= 40:
-            print("Üst üste çok fazla başarısız istek, Yahoo Finance muhtemelen bu IP'yi engelledi. Taramayı erken durduruyorum.")
+            print("Üst üste çok fazla başarısız istek, İş Yatırım muhtemelen bu IP'yi geçici engelledi. Taramayı erken durduruyorum.")
             break
 
-        time.sleep(random.uniform(YF_MIN_DELAY, YF_MAX_DELAY))
+        time.sleep(random.uniform(IY_MIN_DELAY, IY_MAX_DELAY))
 
     df = pd.DataFrame(rows)
     print(f"Veri çekilebilen hisse sayısı: {len(df)} / {total}")
 
     if df.empty:
-        print("Hiçbir hisse için veri çekilemedi (Yahoo Finance engeli olabilir).")
+        print("Hiçbir hisse için veri çekilemedi.")
         return df
 
     # Likidite filtresi
@@ -201,34 +218,62 @@ def round1_screen(tickers):
     if df.empty:
         return df
 
-    # Basit kompozit skor (yüzdelik dilim bazlı, eksik veri nötr kabul edilir)
-    def pct_rank(series, ascending=True):
-        return series.rank(pct=True, ascending=ascending, na_option="keep").fillna(0.5)
-
-    # Değerleme: düşük F/K ve düşük PD/DD daha iyi -> ters çevirip rank
-    df["score_pe"] = pct_rank(df["trailing_pe"].where(df["trailing_pe"] > 0), ascending=False)
-    df["score_pb"] = pct_rank(df["price_to_book"].where(df["price_to_book"] > 0), ascending=False)
-    df["score_roe"] = pct_rank(df["roe"], ascending=True)
-    df["score_rev_growth"] = pct_rank(df["revenue_growth"], ascending=True)
-    df["score_earn_growth"] = pct_rank(df["earnings_growth"], ascending=True)
-    df["score_leverage"] = pct_rank(df["debt_to_equity"], ascending=False)
-
-    df["composite_score"] = (
-        df["score_pe"] * 0.20
-        + df["score_pb"] * 0.15
-        + df["score_roe"] * 0.20
-        + df["score_rev_growth"] * 0.20
-        + df["score_earn_growth"] * 0.20
-        + df["score_leverage"] * 0.05
-    )
-
-    df = df.sort_values("composite_score", ascending=False)
+    # Fundamental veri henüz yok, en likit hisseleri aday gösteriyoruz
+    # (likit hisseler genelde daha iyi kapsanan, daha güvenilir veriye sahip
+    # orta/büyük ölçekli şirketlerdir).
+    df = df.sort_values("avg_daily_turnover_try", ascending=False)
     return df.head(MAX_DEEP_CANDIDATES)
 
 
 # --------------------------------------------------------------------------
-# 3) ROUND 2 — GEMINI İLE DERİN ANALİZ
+# 3) ROUND 2 — SADECE FİNALİSTLER İÇİN FUNDAMENTAL VERİ + GEMINI ANALİZİ
 # --------------------------------------------------------------------------
+_yf_session = None
+
+
+def _get_yf_session():
+    global _yf_session
+    if _yf_session is None:
+        import requests as _requests
+        _yf_session = _requests.Session()
+        _yf_session.headers.update(YF_SESSION_HEADERS)
+    return _yf_session
+
+
+def fetch_fundamentals_best_effort(ticker):
+    """Sadece Round 2 finalistleri (~20 hisse) için yfinance'tan fundamental
+    oranları çekmeyi DENER. Yahoo bu isteği de engellerse (mümkün), tüm
+    alanlar N/A olarak işaretlenir ve analiz yine de devam eder — sistem
+    çökmez, sadece data_confidence düşük çıkar."""
+    fields = {
+        "name": ticker, "sector": "N/A", "industry": "N/A", "market_cap": "N/A",
+        "trailing_pe": "N/A", "forward_pe": "N/A", "price_to_book": "N/A",
+        "roe": "N/A", "revenue_growth": "N/A", "earnings_growth": "N/A",
+        "debt_to_equity": "N/A", "dividend_yield": "N/A",
+    }
+    try:
+        t = yf.Ticker(f"{ticker}.IS", session=_get_yf_session())
+        info = t.info or {}
+        if info:
+            fields.update({
+                "name": info.get("longName", ticker),
+                "sector": info.get("sector") or "N/A",
+                "industry": info.get("industry") or "N/A",
+                "market_cap": info.get("marketCap") or "N/A",
+                "trailing_pe": info.get("trailingPE") or "N/A",
+                "forward_pe": info.get("forwardPE") or "N/A",
+                "price_to_book": info.get("priceToBook") or "N/A",
+                "roe": info.get("returnOnEquity") or "N/A",
+                "revenue_growth": info.get("revenueGrowth") or "N/A",
+                "earnings_growth": info.get("earningsGrowth") or "N/A",
+                "debt_to_equity": info.get("debtToEquity") or "N/A",
+                "dividend_yield": info.get("dividendYield") or "N/A",
+            })
+    except Exception as e:
+        print(f"  {ticker}: fundamental veri alınamadı, N/A ile devam ({e})")
+    return fields
+
+
 ANALYSIS_PROMPT_TEMPLATE = """
 Sen kurumsal düzeyde bir BIST temel analiz uzmanısın. Aşağıdaki şirket için
 SADECE verilen sayısal verilere dayanarak bir değerlendirme yap. Bilmediğin
@@ -286,9 +331,14 @@ def analyze_with_gemini(candidate):
 
 def round2_deep_analysis(candidates_df):
     results = []
-    for i, row in enumerate(candidates_df.to_dict("records"), 1):
-        print(f"  Derin analiz {i}/{len(candidates_df)}: {row['ticker']}")
-        result = analyze_with_gemini(row)
+    records = candidates_df.to_dict("records")
+    for i, row in enumerate(records, 1):
+        ticker = row["ticker"]
+        print(f"  Derin analiz {i}/{len(records)}: {ticker}")
+        fundamentals = fetch_fundamentals_best_effort(ticker)
+        candidate = {**fundamentals, "ticker": ticker, "price": row["price"]}
+        time.sleep(1.5)  # yfinance'a da nazik davranalım
+        result = analyze_with_gemini(candidate)
         if result:
             results.append(result)
         time.sleep(SLEEP_BETWEEN_GEMINI_CALLS)
