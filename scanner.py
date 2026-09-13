@@ -22,10 +22,10 @@ Notlar / bilinen sınırlamalar (MVP aşaması):
 import io
 import json
 import os
+import random
 import re
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -48,7 +48,22 @@ FALLBACK_TICKERS_FILE = os.path.join(os.path.dirname(__file__), "bist_tickers_fa
 MAX_DEEP_CANDIDATES = 22          # Round 2'ye (Gemini'ye) gidecek maksimum aday sayısı
 MIN_AVG_DAILY_TURNOVER_TRY = 3_000_000   # yaklaşık günlük TL hacim eşiği (likidite filtresi)
 SLEEP_BETWEEN_GEMINI_CALLS = 7    # saniye — ücretsiz tier RPM limitine takılmamak için
-YF_WORKERS = 6                    # yfinance için paralel iş sayısı
+
+# yfinance / Yahoo Finance çok agresif rate-limit uyguluyor, özellikle GitHub
+# Actions gibi paylaşımlı bulut IP'lerinde. Bu yüzden İSTEĞE BAĞLI OLARAK
+# PARALEL DEĞİL, seri ve aralıklı istek atıyoruz + hata durumunda tekrar deniyoruz.
+YF_MIN_DELAY = 0.8                # istekler arası minimum bekleme (saniye)
+YF_MAX_DELAY = 1.8                # istekler arası maksimum bekleme (saniye)
+YF_MAX_RETRIES = 3                # bir hisse için maksimum deneme sayısı
+YF_BACKOFF_BASE = 5               # ilk backoff bekleme süresi (saniye), her denemede ikiye katlanır
+
+# Yahoo bazen User-Agent'sız/bot gibi görünen istekleri reddediyor
+YF_SESSION_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    )
+}
 
 TR_TZ = timezone(timedelta(hours=3))
 
@@ -90,52 +105,94 @@ def get_bist_tickers():
 # --------------------------------------------------------------------------
 # 2) ROUND 1 — SAYISAL (LLM'SİZ) ÖN ELEME
 # --------------------------------------------------------------------------
+_yf_session = None
+
+
+def _get_yf_session():
+    """Tüm istekler için tek, gerçek tarayıcı gibi görünen bir session paylaşılır."""
+    global _yf_session
+    if _yf_session is None:
+        import requests as _requests
+        _yf_session = _requests.Session()
+        _yf_session.headers.update(YF_SESSION_HEADERS)
+    return _yf_session
+
+
 def fetch_yf_snapshot(ticker):
-    """Tek bir hisse için yfinance'tan temel verileri çeker."""
+    """Tek bir hisse için yfinance'tan temel verileri çeker.
+    Yahoo rate-limit uyguladığında (429 / boş veri) birkaç kez, artan
+    bekleme süreleriyle tekrar dener."""
     yf_ticker = f"{ticker}.IS"
-    try:
-        t = yf.Ticker(yf_ticker)
-        info = t.info or {}
-        price = info.get("currentPrice") or info.get("regularMarketPrice")
-        avg_volume = info.get("averageVolume") or info.get("averageDailyVolume10Day")
-        if not price or not avg_volume:
-            return None
-        return {
-            "ticker": ticker,
-            "name": info.get("longName", ticker),
-            "sector": info.get("sector", "N/A"),
-            "industry": info.get("industry", "N/A"),
-            "price": price,
-            "market_cap": info.get("marketCap"),
-            "avg_daily_turnover_try": price * avg_volume,
-            "trailing_pe": info.get("trailingPE"),
-            "forward_pe": info.get("forwardPE"),
-            "price_to_book": info.get("priceToBook"),
-            "roe": info.get("returnOnEquity"),
-            "revenue_growth": info.get("revenueGrowth"),
-            "earnings_growth": info.get("earningsGrowth"),
-            "debt_to_equity": info.get("debtToEquity"),
-            "dividend_yield": info.get("dividendYield"),
-        }
-    except Exception:
-        return None
+
+    for attempt in range(1, YF_MAX_RETRIES + 1):
+        try:
+            t = yf.Ticker(yf_ticker, session=_get_yf_session())
+            info = t.info or {}
+            price = info.get("currentPrice") or info.get("regularMarketPrice")
+            avg_volume = info.get("averageVolume") or info.get("averageDailyVolume10Day")
+            if not price or not avg_volume:
+                # Veri boş geldi -> muhtemelen rate limit, tekrar dene
+                raise ValueError("Boş veri (muhtemel rate limit)")
+            return {
+                "ticker": ticker,
+                "name": info.get("longName", ticker),
+                "sector": info.get("sector", "N/A"),
+                "industry": info.get("industry", "N/A"),
+                "price": price,
+                "market_cap": info.get("marketCap"),
+                "avg_daily_turnover_try": price * avg_volume,
+                "trailing_pe": info.get("trailingPE"),
+                "forward_pe": info.get("forwardPE"),
+                "price_to_book": info.get("priceToBook"),
+                "roe": info.get("returnOnEquity"),
+                "revenue_growth": info.get("revenueGrowth"),
+                "earnings_growth": info.get("earningsGrowth"),
+                "debt_to_equity": info.get("debtToEquity"),
+                "dividend_yield": info.get("dividendYield"),
+            }
+        except Exception as e:
+            if attempt < YF_MAX_RETRIES:
+                backoff = YF_BACKOFF_BASE * (2 ** (attempt - 1))
+                time.sleep(backoff)
+            else:
+                print(f"  {ticker}: {YF_MAX_RETRIES} denemede de veri alınamadı ({e})")
+                return None
+    return None
 
 
 def round1_screen(tickers):
-    """Tüm evreni paralel şekilde çeker, likidite filtresi uygular ve basit
-    bir sayısal kompozit skorla en iyi MAX_DEEP_CANDIDATES adayı seçer."""
+    """Tüm evreni SERİ (paralel değil) şekilde, aralıklı isteklerle çeker,
+    likidite filtresi uygular ve basit bir sayısal kompozit skorla en iyi
+    MAX_DEEP_CANDIDATES adayı seçer."""
     rows = []
-    with ThreadPoolExecutor(max_workers=YF_WORKERS) as pool:
-        futures = {pool.submit(fetch_yf_snapshot, tk): tk for tk in tickers}
-        for i, fut in enumerate(as_completed(futures), 1):
-            res = fut.result()
-            if res:
-                rows.append(res)
-            if i % 50 == 0:
-                print(f"  ...{i}/{len(tickers)} hisse tarandı")
+    total = len(tickers)
+    consecutive_failures = 0
+
+    for i, tk in enumerate(tickers, 1):
+        res = fetch_yf_snapshot(tk)
+        if res:
+            rows.append(res)
+            consecutive_failures = 0
+        else:
+            consecutive_failures += 1
+
+        if i % 25 == 0 or i == total:
+            print(f"  ...{i}/{total} hisse tarandı (şu ana kadar başarılı: {len(rows)})")
+
+        # Yahoo bizi tamamen bloke ettiyse (örn. 40 hisse üst üste başarısız),
+        # saatlerce tek tek denemek yerine erken durup net bir mesajla çık.
+        if consecutive_failures >= 40:
+            print("Üst üste çok fazla başarısız istek, Yahoo Finance muhtemelen bu IP'yi engelledi. Taramayı erken durduruyorum.")
+            break
+
+        time.sleep(random.uniform(YF_MIN_DELAY, YF_MAX_DELAY))
 
     df = pd.DataFrame(rows)
-    print(f"Veri çekilebilen hisse sayısı: {len(df)} / {len(tickers)}")
+    print(f"Veri çekilebilen hisse sayısı: {len(df)} / {total}")
+
+    if df.empty:
+        print("Hiçbir hisse için veri çekilemedi (Yahoo Finance engeli olabilir).")
+        return df
 
     # Likidite filtresi
     df = df[df["avg_daily_turnover_try"].fillna(0) >= MIN_AVG_DAILY_TURNOVER_TRY].copy()
