@@ -1,4 +1,80 @@
 {
-  "date": null,
-  "ranking": []
+  "date": "2026-09-13",
+  "ranking": [
+    {
+      "ticker": "THYAO",
+      "rank": 1,
+      "alpha_score": 40
+    },
+    {
+      "ticker": "KCHOL",
+      "rank": 2,
+      "alpha_score": 40
+    },
+    {
+      "ticker": "ASELS",
+      "rank": 3,
+      "alpha_score": 30
+    },
+    {
+      "ticker": "TUPRS",
+      "rank": 4,
+      "alpha_score": 30
+    },
+    {
+      "ticker": "ASTOR",
+      "rank": 5,
+      "alpha_score": 30
+    },
+    {
+      "ticker": "BIMAS",
+      "rank": 6,
+      "alpha_score": 30
+    },
+    {
+      "ticker": "MGROS",
+      "rank": 7,
+      "alpha_score": 30
+    },
+    {
+      "ticker": "AKBNK",
+      "rank": 8,
+      "alpha_score": 30
+    },
+    {
+      "ticker": "DOCO",
+      "rank": 9,
+      "alpha_score": 30
+    },
+    {
+      "ticker": "PASEU",
+      "rank": 10,
+      "alpha_score": 30
+    },
+    {
+      "ticker": "ODINE",
+      "rank": 11,
+      "alpha_score": 25
+    },
+    {
+      "ticker": "GUBRF",
+      "rank": 12,
+      "alpha_score": 25
+    },
+    {
+      "ticker": "SELEC",
+      "rank": 13,
+      "alpha_score": 25
+    },
+    {
+      "ticker": "EGEEN",
+      "rank": 14,
+      "alpha_score": 25
+    },
+    {
+      "ticker": "KTLEV",
+      "rank": 15,
+      "alpha_score": 25
+    }
+  ]
 }
