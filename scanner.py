@@ -372,7 +372,8 @@ def send_telegram_message(text):
 # --------------------------------------------------------------------------
 def main():
     now = datetime.now(TR_TZ)
-    if now.weekday() >= 5:  # 5=Cumartesi, 6=Pazar
+    is_manual_run = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+    if now.weekday() >= 5 and not is_manual_run:  # 5=Cumartesi, 6=Pazar
         print("Hafta sonu, tarama yapılmıyor.")
         return
 
