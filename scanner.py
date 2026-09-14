@@ -39,8 +39,8 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import requests
-import yfinance as yf
 from isyatirimhisse import fetch_stock_data as isy_fetch_stock_data
+from isyatirimhisse import fetch_financials as isy_fetch_financials
 from google import genai
 from google.genai import types
 
@@ -59,21 +59,21 @@ MAX_DEEP_CANDIDATES = 22          # Round 2'ye (Gemini'ye) gidecek maksimum aday
 MIN_AVG_DAILY_TURNOVER_TRY = 3_000_000   # yaklaşık günlük TL hacim eşiği (likidite filtresi)
 SLEEP_BETWEEN_GEMINI_CALLS = 7    # saniye — ücretsiz tier RPM limitine takılmamak için
 
-# yfinance / Yahoo Finance çok agresif rate-limit uyguluyor, özellikle GitHub
-# Actions gibi paylaşımlı bulut IP'lerinde. Bu yüzden İSTEĞE BAĞLI OLARAK
-# PARALEL DEĞİL, seri ve aralıklı istek atıyoruz + hata durumunda tekrar deniyoruz.
-YF_MIN_DELAY = 0.8                # istekler arası minimum bekleme (saniye)
-YF_MAX_DELAY = 1.8                # istekler arası maksimum bekleme (saniye)
-YF_MAX_RETRIES = 3                # bir hisse için maksimum deneme sayısı
-YF_BACKOFF_BASE = 5               # ilk backoff bekleme süresi (saniye), her denemede ikiye katlanır
+# İş Yatırım'ın fetch_financials fonksiyonu şirkete göre farklı raporlama
+# formatı kullanabiliyor (THYAO testinde group='1' / XI_29 çalıştı, group='2'
+# / UFRS boş döndü). Bu yüzden sırayla ikisini de deniyoruz.
+FIN_GROUPS_TO_TRY = ["1", "2"]
+FIN_REQUEST_DELAY = 1.2           # finansal veri istekleri arası bekleme (saniye)
 
-# Yahoo bazen User-Agent'sız/bot gibi görünen istekleri reddediyor
-YF_SESSION_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    )
-}
+# Bilanço/gelir tablosu kalem kodları (THYAO üzerinde doğrulandı, standart
+# İş Yatırım XI_29 kod şeması olduğu için diğer şirketlerde de aynı olmalı)
+ITEM_REVENUE = "3C"                # Satış Gelirleri
+ITEM_NET_INCOME_PARENT = "3Z"      # Ana Ortaklık Payları (net kâr)
+ITEM_EPS = "3ZD"                   # Hisse Başına Kazanç
+ITEM_TOTAL_ASSETS = "1BL"          # TOPLAM VARLIKLAR
+ITEM_PARENT_EQUITY = "2O"          # Ana Ortaklığa Ait Özkaynaklar
+ITEM_SHORT_TERM_LIAB = "2A"        # Kısa Vadeli Yükümlülükler
+ITEM_LONG_TERM_LIAB = "2B"         # Uzun Vadeli Yükümlülükler
 
 TR_TZ = timezone(timedelta(hours=3))
 
@@ -228,52 +228,147 @@ def round1_screen(tickers):
 # --------------------------------------------------------------------------
 # 3) ROUND 2 — SADECE FİNALİSTLER İÇİN FUNDAMENTAL VERİ + GEMINI ANALİZİ
 # --------------------------------------------------------------------------
-_yf_session = None
+_QUARTER_COL_PATTERN = re.compile(r"^(\d{4})/(\d{1,2})$")
 
 
-def _get_yf_session():
-    global _yf_session
-    if _yf_session is None:
-        import requests as _requests
-        _yf_session = _requests.Session()
-        _yf_session.headers.update(YF_SESSION_HEADERS)
-    return _yf_session
+def _quarter_columns_sorted(df):
+    """DataFrame'deki '2025/9' gibi çeyrek sütunlarını kronolojik sıraya dizer."""
+    cols = []
+    for c in df.columns:
+        m = _QUARTER_COL_PATTERN.match(str(c))
+        if m:
+            cols.append((int(m.group(1)), int(m.group(2)), c))
+    cols.sort()  # yıl, sonra ay bazlı artan sıralama
+    return cols
 
 
-def fetch_fundamentals_best_effort(ticker):
-    """Sadece Round 2 finalistleri (~20 hisse) için yfinance'tan fundamental
-    oranları çekmeyi DENER. Yahoo bu isteği de engellerse (mümkün), tüm
-    alanlar N/A olarak işaretlenir ve analiz yine de devam eder — sistem
-    çökmez, sadece data_confidence düşük çıkar."""
+def _get_item_row(df, item_code):
+    match = df[df["FINANCIAL_ITEM_CODE"] == item_code]
+    if match.empty:
+        return None
+    return match.iloc[0]
+
+
+def _latest_and_prior_year(df, item_code, quarter_cols):
+    """Bir kalemin en güncel (dolu) değerini ve bir önceki yılın aynı
+    dönemindeki değerini döndürür. Ayrıca dönemin kaç aylık olduğunu (3/6/9/12)
+    da döndürür (yıllıklandırma için)."""
+    row = _get_item_row(df, item_code)
+    if row is None:
+        return None, None, None
+
+    latest_val, latest_year, latest_period = None, None, None
+    for year, period, col in reversed(quarter_cols):  # en güncelden geçmişe
+        val = row.get(col)
+        if pd.notna(val):
+            try:
+                latest_val = float(val)
+                latest_year, latest_period = year, period
+                break
+            except (TypeError, ValueError):
+                continue
+
+    if latest_val is None:
+        return None, None, None
+
+    prior_col = f"{latest_year - 1}/{latest_period}"
+    prior_val = None
+    if prior_col in df.columns:
+        raw = row.get(prior_col)
+        if pd.notna(raw):
+            try:
+                prior_val = float(raw)
+            except (TypeError, ValueError):
+                prior_val = None
+
+    return latest_val, prior_val, latest_period
+
+
+def _annualize(value, period_months):
+    if value is None or not period_months:
+        return None
+    return value * (12 / period_months)
+
+
+def _safe_div(a, b):
+    if a is None or b is None or b == 0:
+        return None
+    return a / b
+
+
+def fetch_fundamentals_isyatirim(ticker):
+    """İş Yatırım'ın bilanço/gelir tablosu verisinden F/K, ROE, PD/DD, borç/
+    özsermaye ve büyüme oranlarını KENDİMİZ hesaplıyoruz. Veri gelmezse (ya
+    da bir kalem eksikse) o alan N/A olarak işaretlenir, uydurulmaz."""
     fields = {
         "name": ticker, "sector": "N/A", "industry": "N/A", "market_cap": "N/A",
         "trailing_pe": "N/A", "forward_pe": "N/A", "price_to_book": "N/A",
         "roe": "N/A", "revenue_growth": "N/A", "earnings_growth": "N/A",
         "debt_to_equity": "N/A", "dividend_yield": "N/A",
     }
+
+    this_year = datetime.now(TR_TZ).year
+    df = None
+    for group in FIN_GROUPS_TO_TRY:
+        try:
+            candidate_df = isy_fetch_financials(
+                symbols=ticker, start_year=this_year - 2, end_year=this_year,
+                financial_group=group,
+            )
+            if candidate_df is not None and not candidate_df.empty:
+                df = candidate_df
+                break
+        except Exception:
+            pass
+        time.sleep(FIN_REQUEST_DELAY)
+
+    if df is None:
+        print(f"  {ticker}: bilanço verisi hiçbir formatta bulunamadı, N/A ile devam")
+        return fields
+
+    quarter_cols = _quarter_columns_sorted(df)
+    if not quarter_cols:
+        return fields
+
     try:
-        t = yf.Ticker(f"{ticker}.IS", session=_get_yf_session())
-        info = t.info or {}
-        if info:
-            fields.update({
-                "name": info.get("longName", ticker),
-                "sector": info.get("sector") or "N/A",
-                "industry": info.get("industry") or "N/A",
-                "market_cap": info.get("marketCap") or "N/A",
-                "trailing_pe": info.get("trailingPE") or "N/A",
-                "forward_pe": info.get("forwardPE") or "N/A",
-                "price_to_book": info.get("priceToBook") or "N/A",
-                "roe": info.get("returnOnEquity") or "N/A",
-                "revenue_growth": info.get("revenueGrowth") or "N/A",
-                "earnings_growth": info.get("earningsGrowth") or "N/A",
-                "debt_to_equity": info.get("debtToEquity") or "N/A",
-                "dividend_yield": info.get("dividendYield") or "N/A",
-            })
+        revenue_latest, revenue_prior, period = _latest_and_prior_year(df, ITEM_REVENUE, quarter_cols)
+        net_income_latest, net_income_prior, _ = _latest_and_prior_year(df, ITEM_NET_INCOME_PARENT, quarter_cols)
+        eps_latest, _, _ = _latest_and_prior_year(df, ITEM_EPS, quarter_cols)
+        equity_latest, _, _ = _latest_and_prior_year(df, ITEM_PARENT_EQUITY, quarter_cols)
+        st_liab_latest, _, _ = _latest_and_prior_year(df, ITEM_SHORT_TERM_LIAB, quarter_cols)
+        lt_liab_latest, _, _ = _latest_and_prior_year(df, ITEM_LONG_TERM_LIAB, quarter_cols)
+
+        # Büyüme oranları: aynı dönemin bir önceki yıla göre değişimi (YoY)
+        if revenue_latest is not None and revenue_prior:
+            fields["revenue_growth"] = round((revenue_latest / revenue_prior - 1), 4)
+        if net_income_latest is not None and net_income_prior:
+            fields["earnings_growth"] = round((net_income_latest / net_income_prior - 1), 4)
+
+        # Yıllıklandırılmış (TTM'e yakın) net kâr ve EPS
+        net_income_annualized = _annualize(net_income_latest, period)
+        eps_annualized = _annualize(eps_latest, period)
+
+        # ROE = yıllıklandırılmış net kâr / son özkaynak
+        roe = _safe_div(net_income_annualized, equity_latest)
+        if roe is not None:
+            fields["roe"] = round(roe, 4)
+
+        # Borç / Özkaynak
+        if st_liab_latest is not None and lt_liab_latest is not None:
+            dte = _safe_div(st_liab_latest + lt_liab_latest, equity_latest)
+            if dte is not None:
+                fields["debt_to_equity"] = round(dte, 2)
+
+        # F/K = fiyat / yıllıklandırılmış hisse başı kazanç
+        # (fields["_price"] Round 2'de candidate içine ayrıca eklenecek)
+        fields["_eps_annualized"] = eps_annualized
+        fields["_net_income_annualized"] = net_income_annualized
+        fields["_equity_latest"] = equity_latest
+
     except Exception as e:
-        print(f"  {ticker}: fundamental veri alınamadı, N/A ile devam ({e})")
+        print(f"  {ticker}: oran hesaplanırken hata ({e}), mevcut alanlarla devam")
+
     return fields
-
-
 ANALYSIS_PROMPT_TEMPLATE = """
 Sen kurumsal düzeyde bir BIST temel analiz uzmanısın. Aşağıdaki şirket için
 SADECE verilen sayısal verilere dayanarak bir değerlendirme yap. Bilmediğin
@@ -329,15 +424,41 @@ def analyze_with_gemini(candidate):
         return None
 
 
+def _finalize_price_based_ratios(fundamentals, price):
+    """fetch_fundamentals_isyatirim'in bıraktığı ara değerlerden (EPS, net
+    kâr, özkaynak) fiyata bağlı oranları (F/K, PD/DD, piyasa değeri) tamamlar."""
+    eps_ann = fundamentals.pop("_eps_annualized", None)
+    net_income_ann = fundamentals.pop("_net_income_annualized", None)
+    equity_latest = fundamentals.pop("_equity_latest", None)
+
+    shares_outstanding = None
+    if eps_ann and net_income_ann and abs(eps_ann) > 1e-9:
+        shares_outstanding = net_income_ann / eps_ann
+
+    if eps_ann and eps_ann > 0:
+        fundamentals["trailing_pe"] = round(price / eps_ann, 2)
+
+    if shares_outstanding and shares_outstanding > 0:
+        market_cap = price * shares_outstanding
+        fundamentals["market_cap"] = round(market_cap, 0)
+        if equity_latest and equity_latest > 0:
+            book_value_per_share = equity_latest / shares_outstanding
+            if book_value_per_share > 0:
+                fundamentals["price_to_book"] = round(price / book_value_per_share, 2)
+
+    return fundamentals
+
+
 def round2_deep_analysis(candidates_df):
     results = []
     records = candidates_df.to_dict("records")
     for i, row in enumerate(records, 1):
         ticker = row["ticker"]
+        price = row["price"]
         print(f"  Derin analiz {i}/{len(records)}: {ticker}")
-        fundamentals = fetch_fundamentals_best_effort(ticker)
-        candidate = {**fundamentals, "ticker": ticker, "price": row["price"]}
-        time.sleep(1.5)  # yfinance'a da nazik davranalım
+        fundamentals = fetch_fundamentals_isyatirim(ticker)
+        fundamentals = _finalize_price_based_ratios(fundamentals, price)
+        candidate = {**fundamentals, "ticker": ticker, "price": price}
         result = analyze_with_gemini(candidate)
         if result:
             results.append(result)
