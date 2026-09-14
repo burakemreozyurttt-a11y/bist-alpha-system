@@ -2,59 +2,19 @@
   "date": "2026-09-14",
   "ranking": [
     {
-      "ticker": "ASELS",
-      "rank": 1,
-      "alpha_score": 82
-    },
-    {
-      "ticker": "TUPRS",
-      "rank": 2,
-      "alpha_score": 82
-    },
-    {
       "ticker": "THYAO",
-      "rank": 3,
-      "alpha_score": 68
+      "rank": 1,
+      "alpha_score": 72
     },
     {
-      "ticker": "BIMAS",
-      "rank": 4,
-      "alpha_score": 68
-    },
-    {
-      "ticker": "ASTOR",
-      "rank": 5,
-      "alpha_score": 58
-    },
-    {
-      "ticker": "BRSAN",
-      "rank": 6,
-      "alpha_score": 58
-    },
-    {
-      "ticker": "KCHOL",
-      "rank": 7,
-      "alpha_score": 38
-    },
-    {
-      "ticker": "DOCO",
-      "rank": 8,
-      "alpha_score": 30
-    },
-    {
-      "ticker": "DSTKF",
-      "rank": 9,
-      "alpha_score": 20
+      "ticker": "ODINE",
+      "rank": 2,
+      "alpha_score": 42
     },
     {
       "ticker": "OZATD",
-      "rank": 10,
-      "alpha_score": 18
-    },
-    {
-      "ticker": "TRHOL",
-      "rank": 11,
-      "alpha_score": 5
+      "rank": 3,
+      "alpha_score": 28
     }
   ]
 }
