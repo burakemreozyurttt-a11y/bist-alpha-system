@@ -452,19 +452,28 @@ def analyze_with_gemini(candidate):
         return None
 
 
-def _finalize_price_based_ratios(fundamentals, price):
+def _finalize_price_based_ratios(fundamentals, price, ticker):
     """fetch_fundamentals_isyatirim'in bıraktığı ara değerlerden (EPS, net
-    kâr, özkaynak) fiyata bağlı oranları (F/K, PD/DD, piyasa değeri) tamamlar."""
+    kâr, özkaynak) fiyata bağlı oranları (F/K, PD/DD, piyasa değeri) tamamlar.
+    Ayrıca fiziksel olarak imkansız/anlamsız çıkan (veri hatasından
+    kaynaklanan) çarpanları N/A'ya çevirerek Gemini'ye yanlış veri gitmesini
+    engeller."""
     eps_ann = fundamentals.pop("_eps_annualized", None)
     net_income_ann = fundamentals.pop("_net_income_annualized", None)
     equity_latest = fundamentals.pop("_equity_latest", None)
+
+    print(f"  [DEBUG {ticker}] eps_ann={eps_ann}, net_income_ann={net_income_ann}, equity_latest={equity_latest}, price={price}")
 
     shares_outstanding = None
     if eps_ann and net_income_ann and abs(eps_ann) > 1e-9:
         shares_outstanding = net_income_ann / eps_ann
 
     if eps_ann and eps_ann > 0:
-        fundamentals["trailing_pe"] = round(price / eps_ann, 2)
+        pe = price / eps_ann
+        if 1.0 <= pe <= 500:
+            fundamentals["trailing_pe"] = round(pe, 2)
+        else:
+            print(f"  [UYARI {ticker}] Hesaplanan F/K ({pe:.2f}) makul aralık dışında (1-500), N/A yapılıyor.")
 
     if shares_outstanding and shares_outstanding > 0:
         market_cap = price * shares_outstanding
@@ -472,7 +481,11 @@ def _finalize_price_based_ratios(fundamentals, price):
         if equity_latest and equity_latest > 0:
             book_value_per_share = equity_latest / shares_outstanding
             if book_value_per_share > 0:
-                fundamentals["price_to_book"] = round(price / book_value_per_share, 2)
+                pb = price / book_value_per_share
+                if 0.1 <= pb <= 50:
+                    fundamentals["price_to_book"] = round(pb, 2)
+                else:
+                    print(f"  [UYARI {ticker}] Hesaplanan PD/DD ({pb:.2f}) makul aralık dışında (0.1-50), N/A yapılıyor.")
 
     return fundamentals
 
@@ -485,7 +498,7 @@ def round2_deep_analysis(candidates_df):
         price = row["price"]
         print(f"  Derin analiz {i}/{len(records)}: {ticker}")
         fundamentals = fetch_fundamentals_isyatirim(ticker)
-        fundamentals = _finalize_price_based_ratios(fundamentals, price)
+        fundamentals = _finalize_price_based_ratios(fundamentals, price, ticker)
         candidate = {**fundamentals, "ticker": ticker, "price": price}
         result = analyze_with_gemini(candidate)
         if result:
