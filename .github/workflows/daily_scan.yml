@@ -13,6 +13,7 @@ permissions:
 jobs:
   scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 60   # hiçbir koşulda 1 saatten fazla sürmesin
     steps:
       - name: Repo'yu çek
         uses: actions/checkout@v4
