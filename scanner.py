@@ -115,9 +115,9 @@ def get_bist_tickers():
 # --------------------------------------------------------------------------
 # 2) ROUND 1 — LİKİDİTE TARAMASI (İş Yatırım verisiyle, LLM'siz)
 # --------------------------------------------------------------------------
-IY_MIN_DELAY = 0.5                # istekler arası minimum bekleme (saniye)
-IY_MAX_DELAY = 1.2                # istekler arası maksimum bekleme (saniye)
-IY_MAX_RETRIES = 2
+IY_MIN_DELAY = 1.0                # istekler arası minimum bekleme (saniye)
+IY_MAX_DELAY = 2.2                # istekler arası maksimum bekleme (saniye)
+IY_MAX_RETRIES = 1                # tekrar deneme YOK — timeout'larda zaman kaybetmemek için
 IY_LOOKBACK_DAYS = 20             # kaç günlük fiyat/hacim geçmişine bakılacak
 
 _debug_columns_printed = False    # ilk başarılı çekimde sütun isimlerini bir kez loglamak için
@@ -178,6 +178,9 @@ def fetch_price_snapshot(ticker):
     return None
 
 
+ROUND1_TIME_BUDGET_SECONDS = 20 * 60   # Round 1 toplamda en fazla ~20 dakika sürsün
+
+
 def round1_screen(tickers):
     """Tüm evreni İş Yatırım'dan seri şekilde çeker, likidite filtresi
     uygular ve en likit MAX_DEEP_CANDIDATES hisseyi Round 2'ye aday gösterir.
@@ -186,8 +189,14 @@ def round1_screen(tickers):
     rows = []
     total = len(tickers)
     consecutive_failures = 0
+    start_time = time.time()
 
     for i, tk in enumerate(tickers, 1):
+        elapsed = time.time() - start_time
+        if elapsed > ROUND1_TIME_BUDGET_SECONDS:
+            print(f"Round 1 zaman bütçesini ({ROUND1_TIME_BUDGET_SECONDS}s) aştı, {i-1}/{total} hisseyle devam ediliyor.")
+            break
+
         res = fetch_price_snapshot(tk)
         if res:
             rows.append(res)
@@ -196,9 +205,9 @@ def round1_screen(tickers):
             consecutive_failures += 1
 
         if i % 25 == 0 or i == total:
-            print(f"  ...{i}/{total} hisse tarandı (şu ana kadar başarılı: {len(rows)})")
+            print(f"  ...{i}/{total} hisse tarandı (şu ana kadar başarılı: {len(rows)}, geçen süre: {elapsed:.0f}s)")
 
-        if consecutive_failures >= 40:
+        if consecutive_failures >= 20:
             print("Üst üste çok fazla başarısız istek, İş Yatırım muhtemelen bu IP'yi geçici engelledi. Taramayı erken durduruyorum.")
             break
 
