@@ -39,6 +39,23 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import requests
+
+# isyatirimhisse kütüphanesi requests.get(url, timeout=10, ...) çağrısını kod
+# içine sabit yazmış, dışarıdan değiştirilemiyor. İş Yatırım'ın sunucusu bazen
+# 10 saniyeden yavaş yanıt verdiği için (blok değil, gerçek yavaşlık da
+# olabilir) bu süreyi global olarak uzatıyoruz. Artık zaman kısıtımız
+# olmadığı için (saatlerce sürse bile sorun değil) sabırlı olabiliriz.
+_original_requests_get = requests.get
+
+
+def _patched_requests_get(*args, **kwargs):
+    if kwargs.get("timeout") == 10:
+        kwargs["timeout"] = 30
+    return _original_requests_get(*args, **kwargs)
+
+
+requests.get = _patched_requests_get
+
 from isyatirimhisse import fetch_stock_data as isy_fetch_stock_data
 from isyatirimhisse import fetch_financials as isy_fetch_financials
 from google import genai
@@ -115,9 +132,10 @@ def get_bist_tickers():
 # --------------------------------------------------------------------------
 # 2) ROUND 1 — LİKİDİTE TARAMASI (İş Yatırım verisiyle, LLM'siz)
 # --------------------------------------------------------------------------
-IY_MIN_DELAY = 1.0                # istekler arası minimum bekleme (saniye)
-IY_MAX_DELAY = 2.2                # istekler arası maksimum bekleme (saniye)
-IY_MAX_RETRIES = 1                # tekrar deneme YOK — timeout'larda zaman kaybetmemek için
+IY_MIN_DELAY = 2.0                # istekler arası minimum bekleme (saniye) — sabırlı ve nazik
+IY_MAX_DELAY = 4.0                # istekler arası maksimum bekleme (saniye)
+IY_MAX_RETRIES = 2                # zaman kısıtımız yok, tekrar denemeye değer
+IY_RETRY_BACKOFF = 8              # denemeler arası bekleme (saniye)
 IY_LOOKBACK_DAYS = 20             # kaç günlük fiyat/hacim geçmişine bakılacak
 
 _debug_columns_printed = False    # ilk başarılı çekimde sütun isimlerini bir kez loglamak için
@@ -171,14 +189,15 @@ def fetch_price_snapshot(ticker):
             }
         except Exception as e:
             if attempt < IY_MAX_RETRIES:
-                time.sleep(3)
+                time.sleep(IY_RETRY_BACKOFF)
             else:
                 print(f"  {ticker}: fiyat verisi alınamadı ({e})")
                 return None
     return None
 
 
-ROUND1_TIME_BUDGET_SECONDS = 20 * 60   # Round 1 toplamda en fazla ~20 dakika sürsün
+ROUND1_TIME_BUDGET_SECONDS = 5 * 3600   # Round 1 en fazla ~5 saat sürsün (18:30-10:00 arası bolca pay var)
+CONSECUTIVE_FAILURE_CIRCUIT_BREAKER = 150   # bu kadar üst üste başarısızlık = gerçek bir engelleme, dur
 
 
 def round1_screen(tickers):
@@ -207,8 +226,8 @@ def round1_screen(tickers):
         if i % 25 == 0 or i == total:
             print(f"  ...{i}/{total} hisse tarandı (şu ana kadar başarılı: {len(rows)}, geçen süre: {elapsed:.0f}s)")
 
-        if consecutive_failures >= 20:
-            print("Üst üste çok fazla başarısız istek, İş Yatırım muhtemelen bu IP'yi geçici engelledi. Taramayı erken durduruyorum.")
+        if consecutive_failures >= CONSECUTIVE_FAILURE_CIRCUIT_BREAKER:
+            print(f"Üst üste {CONSECUTIVE_FAILURE_CIRCUIT_BREAKER} başarısız istek, İş Yatırım muhtemelen bu IP'yi tamamen engelledi. Taramayı erken durduruyorum.")
             break
 
         time.sleep(random.uniform(IY_MIN_DELAY, IY_MAX_DELAY))
