@@ -2,79 +2,79 @@
   "date": "2026-09-15",
   "ranking": [
     {
-      "ticker": "THYAO",
+      "ticker": "TUPRS",
       "rank": 1,
-      "alpha_score": 72
+      "alpha_score": 75
     },
     {
-      "ticker": "BIMAS",
+      "ticker": "THYAO",
       "rank": 2,
-      "alpha_score": 72
+      "alpha_score": 75
     },
     {
-      "ticker": "AKBNK",
+      "ticker": "GUBRF",
       "rank": 3,
       "alpha_score": 68
     },
     {
-      "ticker": "BRSAN",
+      "ticker": "ASTOR",
       "rank": 4,
-      "alpha_score": 62
+      "alpha_score": 65
+    },
+    {
+      "ticker": "BIMAS",
+      "rank": 5,
+      "alpha_score": 65
     },
     {
       "ticker": "ASELS",
-      "rank": 5,
-      "alpha_score": 58
+      "rank": 6,
+      "alpha_score": 62
     },
     {
-      "ticker": "MGROS",
-      "rank": 6,
-      "alpha_score": 42
+      "ticker": "BRSAN",
+      "rank": 7,
+      "alpha_score": 62
+    },
+    {
+      "ticker": "AKBNK",
+      "rank": 8,
+      "alpha_score": 55
     },
     {
       "ticker": "OZATD",
-      "rank": 7,
-      "alpha_score": 35
+      "rank": 9,
+      "alpha_score": 45
     },
     {
       "ticker": "ODINE",
-      "rank": 8,
-      "alpha_score": 32
+      "rank": 10,
+      "alpha_score": 45
     },
     {
       "ticker": "KCHOL",
-      "rank": 9,
-      "alpha_score": 32
-    },
-    {
-      "ticker": "DOCO",
-      "rank": 10,
-      "alpha_score": 30
-    },
-    {
-      "ticker": "SELEC",
       "rank": 11,
-      "alpha_score": 28
+      "alpha_score": 45
     },
     {
-      "ticker": "DSTKF",
+      "ticker": "MGROS",
       "rank": 12,
-      "alpha_score": 25
+      "alpha_score": 45
     },
     {
-      "ticker": "TRHOL",
+      "ticker": "GUNDG",
       "rank": 13,
-      "alpha_score": 15
+      "alpha_score": 35
     },
     {
       "ticker": "ALKLC",
       "rank": 14,
-      "alpha_score": 15
+      "alpha_score": 35
     },
     {
-      "ticker": "UFUK",
+      "ticker": "SELEC",
       "rank": 15,
-      "alpha_score": 15
+      "alpha_score": 35
     }
   ]
 }
