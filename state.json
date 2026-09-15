@@ -2,79 +2,79 @@
   "date": "2026-09-15",
   "ranking": [
     {
-      "ticker": "TUPRS",
-      "rank": 1,
-      "alpha_score": 82
-    },
-    {
       "ticker": "THYAO",
-      "rank": 2,
+      "rank": 1,
       "alpha_score": 72
     },
     {
       "ticker": "BIMAS",
-      "rank": 3,
-      "alpha_score": 72
-    },
-    {
-      "ticker": "GUBRF",
-      "rank": 4,
+      "rank": 2,
       "alpha_score": 72
     },
     {
       "ticker": "AKBNK",
-      "rank": 5,
-      "alpha_score": 70
-    },
-    {
-      "ticker": "ASTOR",
-      "rank": 6,
-      "alpha_score": 64
+      "rank": 3,
+      "alpha_score": 68
     },
     {
       "ticker": "BRSAN",
-      "rank": 7,
+      "rank": 4,
       "alpha_score": 62
     },
     {
       "ticker": "ASELS",
-      "rank": 8,
+      "rank": 5,
       "alpha_score": 58
     },
     {
       "ticker": "MGROS",
-      "rank": 9,
+      "rank": 6,
       "alpha_score": 42
     },
     {
-      "ticker": "KCHOL",
-      "rank": 10,
-      "alpha_score": 38
-    },
-    {
-      "ticker": "ODINE",
-      "rank": 11,
+      "ticker": "OZATD",
+      "rank": 7,
       "alpha_score": 35
     },
     {
-      "ticker": "OZATD",
-      "rank": 12,
+      "ticker": "ODINE",
+      "rank": 8,
       "alpha_score": 32
     },
     {
-      "ticker": "GUNDG",
-      "rank": 13,
+      "ticker": "KCHOL",
+      "rank": 9,
+      "alpha_score": 32
+    },
+    {
+      "ticker": "DOCO",
+      "rank": 10,
       "alpha_score": 30
     },
     {
+      "ticker": "SELEC",
+      "rank": 11,
+      "alpha_score": 28
+    },
+    {
       "ticker": "DSTKF",
-      "rank": 14,
+      "rank": 12,
       "alpha_score": 25
     },
     {
-      "ticker": "EGEEN",
+      "ticker": "TRHOL",
+      "rank": 13,
+      "alpha_score": 15
+    },
+    {
+      "ticker": "ALKLC",
+      "rank": 14,
+      "alpha_score": 15
+    },
+    {
+      "ticker": "UFUK",
       "rank": 15,
-      "alpha_score": 25
+      "alpha_score": 15
     }
   ]
 }

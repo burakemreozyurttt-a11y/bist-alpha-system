@@ -1,1 +1,82 @@
-[]
+[
+  {
+    "date": "2026-09-15",
+    "ranking": [
+      {
+        "ticker": "THYAO",
+        "rank": 1,
+        "alpha_score": 72
+      },
+      {
+        "ticker": "BIMAS",
+        "rank": 2,
+        "alpha_score": 72
+      },
+      {
+        "ticker": "AKBNK",
+        "rank": 3,
+        "alpha_score": 68
+      },
+      {
+        "ticker": "BRSAN",
+        "rank": 4,
+        "alpha_score": 62
+      },
+      {
+        "ticker": "ASELS",
+        "rank": 5,
+        "alpha_score": 58
+      },
+      {
+        "ticker": "MGROS",
+        "rank": 6,
+        "alpha_score": 42
+      },
+      {
+        "ticker": "OZATD",
+        "rank": 7,
+        "alpha_score": 35
+      },
+      {
+        "ticker": "ODINE",
+        "rank": 8,
+        "alpha_score": 32
+      },
+      {
+        "ticker": "KCHOL",
+        "rank": 9,
+        "alpha_score": 32
+      },
+      {
+        "ticker": "DOCO",
+        "rank": 10,
+        "alpha_score": 30
+      },
+      {
+        "ticker": "SELEC",
+        "rank": 11,
+        "alpha_score": 28
+      },
+      {
+        "ticker": "DSTKF",
+        "rank": 12,
+        "alpha_score": 25
+      },
+      {
+        "ticker": "TRHOL",
+        "rank": 13,
+        "alpha_score": 15
+      },
+      {
+        "ticker": "ALKLC",
+        "rank": 14,
+        "alpha_score": 15
+      },
+      {
+        "ticker": "UFUK",
+        "rank": 15,
+        "alpha_score": 15
+      }
+    ]
+  }
+]
