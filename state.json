@@ -14,7 +14,7 @@
     {
       "ticker": "GUBRF",
       "rank": 3,
-      "alpha_score": 68
+      "alpha_score": 72
     },
     {
       "ticker": "ASTOR",
@@ -27,19 +27,19 @@
       "alpha_score": 65
     },
     {
-      "ticker": "ASELS",
+      "ticker": "BRSAN",
       "rank": 6,
-      "alpha_score": 62
+      "alpha_score": 65
     },
     {
-      "ticker": "BRSAN",
+      "ticker": "ASELS",
       "rank": 7,
       "alpha_score": 62
     },
     {
       "ticker": "AKBNK",
       "rank": 8,
-      "alpha_score": 55
+      "alpha_score": 62
     },
     {
       "ticker": "OZATD",
@@ -67,14 +67,14 @@
       "alpha_score": 35
     },
     {
-      "ticker": "ALKLC",
+      "ticker": "SELEC",
       "rank": 14,
       "alpha_score": 35
     },
     {
-      "ticker": "SELEC",
+      "ticker": "ALKLC",
       "rank": 15,
-      "alpha_score": 35
+      "alpha_score": 30
     }
   ]
 }
