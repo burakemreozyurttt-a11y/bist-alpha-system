@@ -33,10 +33,17 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scanner.py
 
-      - name: state.json değişikliğini commit'le
+      - name: Haftalık özeti çalıştır (sadece Cuma günleri devreye girer)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python weekly_summary.py
+
+      - name: state.json ve history.json değişikliklerini commit'le
         run: |
           git config user.name "bist-alpha-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add state.json
+          git add state.json history.json
           git diff --staged --quiet || git commit -m "Günlük tarama güncellemesi $(date -u +'%Y-%m-%d')"
           git push
