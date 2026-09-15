@@ -554,13 +554,31 @@ def load_previous_state():
     return {"date": None, "ranking": []}
 
 
+HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
+HISTORY_MAX_DAYS = 10   # geçmişte en fazla kaç günlük kayıt tutulsun
+
+
 def save_state(ranking):
-    state = {
-        "date": datetime.now(TR_TZ).strftime("%Y-%m-%d"),
-        "ranking": ranking,
-    }
+    today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
+    state = {"date": today_str, "ranking": ranking}
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+
+    # Faz 2 (haftalık özet) için günlük geçmişi de biriktiriyoruz
+    history = []
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        except Exception:
+            history = []
+
+    history = [h for h in history if h.get("date") != today_str]  # aynı gün varsa üzerine yaz
+    history.append(state)
+    history = history[-HISTORY_MAX_DAYS:]  # sadece son N günü tut
+
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
 
 
 # --------------------------------------------------------------------------
