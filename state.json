@@ -1,20 +1,15 @@
 {
-  "date": "2026-09-14",
+  "date": "2026-09-15",
   "ranking": [
     {
-      "ticker": "THYAO",
-      "rank": 1,
-      "alpha_score": 72
-    },
-    {
-      "ticker": "ODINE",
-      "rank": 2,
-      "alpha_score": 42
-    },
-    {
       "ticker": "OZATD",
-      "rank": 3,
-      "alpha_score": 28
+      "rank": 1,
+      "alpha_score": 30
+    },
+    {
+      "ticker": "DSTKF",
+      "rank": 2,
+      "alpha_score": 20
     }
   ]
 }
