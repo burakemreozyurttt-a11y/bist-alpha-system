@@ -74,9 +74,13 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 # dolarsa ya da erişilemez olursa (404/429) otomatik olarak sıradakine
 # geçiyoruz — her modelin kotası ayrı olduğu için bu bize çok daha büyük
 # birleşik bir günlük bütçe kazandırıyor.
+# Google'ın ücretsiz kotaları şu sıralar sık ve habersiz değişiyor (bazı
+# kullanıcı raporlarına göre lite modeller bile bir anda 20 istek/güne
+# düşürülebiliyor). Bu yüzden birden fazla modeli sırayla deniyoruz ki bir
+# tanesi kısıtlanırsa/kaldırılırsa sistem tamamen durmasın.
 MODEL_CANDIDATES = [
+    "gemini-3.5-flash-lite",
     "gemini-2.5-flash-lite",
-    "gemini-3.6-flash-lite",
     "gemini-2.5-flash",
     "gemini-3.6-flash",
 ]
