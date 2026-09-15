@@ -68,7 +68,19 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-MODEL_NAME = "gemini-3.6-flash"
+# Tek bir modele bağımlı kalmıyoruz: gemini-3.6-flash'ın ücretsiz kotası
+# sadece 20 istek/gün çıktı (çok düşük), gemini-2.5-flash-lite ise Google'ın
+# resmi dokümantasyonuna göre 1000 istek/gün sunuyor. Bir model kotası
+# dolarsa ya da erişilemez olursa (404/429) otomatik olarak sıradakine
+# geçiyoruz — her modelin kotası ayrı olduğu için bu bize çok daha büyük
+# birleşik bir günlük bütçe kazandırıyor.
+MODEL_CANDIDATES = [
+    "gemini-2.5-flash-lite",
+    "gemini-3.6-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-3.6-flash",
+]
+_model_start_idx = 0   # bir model bu çalıştırmada arızalı/tükenmiş bulunursa ileri kaydırılır
 STATE_FILE = os.path.join(os.path.dirname(__file__), "state.json")
 FALLBACK_TICKERS_FILE = os.path.join(os.path.dirname(__file__), "bist_tickers_fallback.csv")
 
@@ -432,24 +444,49 @@ Yalnızca aşağıdaki JSON formatında, başka hiçbir açıklama eklemeden yan
 
 
 def analyze_with_gemini(candidate):
+    global _model_start_idx
     prompt = ANALYSIS_PROMPT_TEMPLATE.format(**candidate)
-    try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.3,
-            ),
-        )
-        data = json.loads(response.text)
-        data["ticker"] = candidate["ticker"]
-        data["name"] = candidate["name"]
-        data["price"] = candidate["price"]
-        return data
-    except Exception as e:
-        print(f"  Gemini hatası ({candidate['ticker']}): {e}")
-        return None
+
+    last_error = None
+    for idx in range(_model_start_idx, len(MODEL_CANDIDATES)):
+        model_name = MODEL_CANDIDATES[idx]
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.3,
+                ),
+            )
+            data = json.loads(response.text)
+            data["ticker"] = candidate["ticker"]
+            data["name"] = candidate["name"]
+            data["price"] = candidate["price"]
+            if idx != _model_start_idx:
+                print(f"  [Model geçişi] Bu istek için {model_name} kullanıldı")
+            return data
+        except Exception as e:
+            last_error = e
+            err_str = str(e)
+            if "NOT_FOUND" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                # Kalıcı sorun (model yok / o modelin günlük kotası bitti) —
+                # bu çalıştırma boyunca bu modeli bir daha deneme.
+                print(f"  {model_name} kalıcı olarak kullanılamıyor ({candidate['ticker']}): {e}")
+                if idx == _model_start_idx:
+                    _model_start_idx = idx + 1
+                continue
+            elif "UNAVAILABLE" in err_str:
+                # Geçici aşırı yük — sadece bu istek için sıradaki modeli dene,
+                # tercih sırasını kalıcı olarak değiştirme.
+                print(f"  {model_name} geçici olarak meşgul ({candidate['ticker']}), bu istek için sıradaki model deneniyor")
+                continue
+            else:
+                print(f"  Gemini hatası ({candidate['ticker']}, {model_name}): {e}")
+                return None
+
+    print(f"  Tüm modeller tükendi/erişilemedi ({candidate['ticker']}): {last_error}")
+    return None
 
 
 def _finalize_price_based_ratios(fundamentals, price, ticker):
