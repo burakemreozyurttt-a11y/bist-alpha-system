@@ -413,12 +413,7 @@ def fetch_fundamentals_isyatirim(ticker):
         print(f"  {ticker}: oran hesaplanırken hata ({e}), mevcut alanlarla devam")
 
     return fields
-ANALYSIS_PROMPT_TEMPLATE = """
-Sen kurumsal düzeyde bir BIST temel analiz uzmanısın. Aşağıdaki şirket için
-SADECE verilen sayısal verilere dayanarak bir değerlendirme yap. Bilmediğin
-veya verilmeyen bilgiyi UYDURMA, "N/A" yaz.
-
-ŞİRKET: {name} ({ticker})
+DATA_BLOCK_TEMPLATE = """ŞİRKET: {name} ({ticker})
 Sektör: {sector} / {industry}
 Güncel Fiyat: {price} TL
 Piyasa Değeri: {market_cap}
@@ -429,28 +424,84 @@ ROE: {roe}
 Ciro Büyümesi (YoY): {revenue_growth}
 Kâr Büyümesi (YoY): {earnings_growth}
 Borç/Özsermaye: {debt_to_equity}
-Temettü Verimi: {dividend_yield}
+Temettü Verimi: {dividend_yield}"""
 
-Yalnızca aşağıdaki JSON formatında, başka hiçbir açıklama eklemeden yanıt ver:
+BEAR_PROMPT_TEMPLATE = """
+Sen bir BIST Ayı (Bear) Analistisin. Görevin SADECE şu şirketteki riskleri,
+"Value Trap" (değer tuzağı) olasılığını, borç/kârlılık sorunlarını ve en
+kötü senaryoyu olabildiğince güçlü savunmak. Şirketin olumlu yanlarını bu
+analizde ELE ALMA — görevin kötümser tarafı zorlamak. Bilmediğin/verilmeyen
+bilgiyi UYDURMA, eksikse "N/A" say.
 
+{data_block}
+
+Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
 {{
-  "alpha_score": <0-100 arası tam sayı, ne kadar cazip bir fırsat>,
+  "bear_case": "<2-3 cümlelik Türkçe, en kötü senaryo argümanı>",
+  "key_risks": ["<risk 1>", "<risk 2>"],
+  "value_trap_risk": <0-100 arası tam sayı, bu şirketin bir değer tuzağı olma ihtimali>,
+  "bear_fv": <TL cinsinden kötümser adil değer, sayı>
+}}
+"""
+
+BULL_PROMPT_TEMPLATE = """
+Sen bir BIST Boğa (Bull) Analistisin. Görevin SADECE şu şirketin büyüme
+potansiyelini, olası katalizörlerini ve en iyi senaryoyu olabildiğince güçlü
+savunmak. Şirketin risklerini bu analizde ELE ALMA — görevin iyimser tarafı
+zorlamak. Bilmediğin/verilmeyen bilgiyi UYDURMA, eksikse "N/A" say.
+
+{data_block}
+
+Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
+{{
+  "bull_case": "<2-3 cümlelik Türkçe, en iyi senaryo argümanı>",
+  "catalysts": ["<katalizör 1>", "<katalizör 2>"],
+  "growth_conviction": <0-100 arası tam sayı, büyüme tezine olan kanaat gücü>,
+  "bull_fv": <TL cinsinden iyimser adil değer, sayı>
+}}
+"""
+
+CRO_PROMPT_TEMPLATE = """
+Sen bir Chief Risk Officer'sın (Yönetici Risk Sorumlusu). Aynı şirket için
+Ayı ve Boğa analistlerinin ürettiği ZIT argümanlar aşağıda veriliyor.
+Görevin: ikisini tarafsızca çarpıştırmak, hangi argümanın veriyle daha
+tutarlı olduğuna karar vermek, çelişkileri tespit etmek ve dengeli, nihai
+bir karar vermek. Tek bir tarafı kayırma; ikna edici olan neyse ona göre
+karar ver.
+
+{data_block}
+
+--- AYI ANALİSTİNİN GÖRÜŞÜ ---
+{bear_case}
+Riskler: {key_risks}
+Value Trap Riski: {value_trap_risk}/100
+Bear FV: {bear_fv}
+
+--- BOĞA ANALİSTİNİN GÖRÜŞÜ ---
+{bull_case}
+Katalizörler: {catalysts}
+Büyüme Kanaati: {growth_conviction}/100
+Bull FV: {bull_fv}
+
+Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
+{{
+  "alpha_score": <0-100 arası tam sayı, iki tarafı tarttıktan sonra nihai cazibe puanı>,
   "data_confidence": <0-100 arası tam sayı, verinin güvenilirliği/tamlığı>,
-  "bear_fv": <TL cinsinden kötümser adil değer, sayı>,
-  "base_fv": <TL cinsinden ana senaryo adil değer, sayı>,
-  "bull_fv": <TL cinsinden iyimser adil değer, sayı>,
-  "thesis_summary": "<2-3 cümlelik Türkçe yatırım tezi özeti>",
-  "catalysts": ["<olası katalizör 1>", "<olası katalizör 2>"],
-  "risks": ["<ana risk 1>", "<ana risk 2>"],
+  "bear_fv": <TL, ayı analistinin değerine katılıyorsan aynen, katılmıyorsan düzeltilmiş hali>,
+  "base_fv": <TL, senin ana senaryo (dengelenmiş) adil değerin>,
+  "bull_fv": <TL, boğa analistinin değerine katılıyorsan aynen, katılmıyorsan düzeltilmiş hali>,
+  "thesis_summary": "<2-3 cümlelik Türkçe, iki tarafı da yansıtan dengeli sentez>",
+  "catalysts": ["<en inandırıcı katalizör(ler)>"],
+  "risks": ["<en inandırıcı risk(ler)>"],
   "verdict": "<HIGH CONVICTION | ATTRACTIVE | WATCH | WEAKENING içinden biri>"
 }}
 """
 
 
-def analyze_with_gemini(candidate):
+def _call_gemini_json(prompt, label):
+    """Model yedekleme zincirini kullanarak Gemini'den JSON yanıt alır.
+    Bear/Bull/CRO ajanlarının üçü de bu ortak fonksiyonu kullanır."""
     global _model_start_idx
-    prompt = ANALYSIS_PROMPT_TEMPLATE.format(**candidate)
-
     last_error = None
     for idx in range(_model_start_idx, len(MODEL_CANDIDATES)):
         model_name = MODEL_CANDIDATES[idx]
@@ -464,33 +515,70 @@ def analyze_with_gemini(candidate):
                 ),
             )
             data = json.loads(response.text)
-            data["ticker"] = candidate["ticker"]
-            data["name"] = candidate["name"]
-            data["price"] = candidate["price"]
             if idx != _model_start_idx:
-                print(f"  [Model geçişi] Bu istek için {model_name} kullanıldı")
+                print(f"  [Model geçişi] {label}: bu istek için {model_name} kullanıldı")
             return data
         except Exception as e:
             last_error = e
             err_str = str(e)
             if "NOT_FOUND" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                # Kalıcı sorun (model yok / o modelin günlük kotası bitti) —
-                # bu çalıştırma boyunca bu modeli bir daha deneme.
-                print(f"  {model_name} kalıcı olarak kullanılamıyor ({candidate['ticker']}): {e}")
+                print(f"  {model_name} kalıcı olarak kullanılamıyor ({label}): {e}")
                 if idx == _model_start_idx:
                     _model_start_idx = idx + 1
                 continue
             elif "UNAVAILABLE" in err_str:
-                # Geçici aşırı yük — sadece bu istek için sıradaki modeli dene,
-                # tercih sırasını kalıcı olarak değiştirme.
-                print(f"  {model_name} geçici olarak meşgul ({candidate['ticker']}), bu istek için sıradaki model deneniyor")
+                print(f"  {model_name} geçici olarak meşgul ({label}), sıradaki model deneniyor")
                 continue
             else:
-                print(f"  Gemini hatası ({candidate['ticker']}, {model_name}): {e}")
+                print(f"  Gemini hatası ({label}): {e}")
                 return None
 
-    print(f"  Tüm modeller tükendi/erişilemedi ({candidate['ticker']}): {last_error}")
+    print(f"  Tüm modeller tükendi/erişilemedi ({label}): {last_error}")
     return None
+
+
+def analyze_with_gemini(candidate):
+    """Bear -> Bull -> CRO üç aşamalı analiz zinciri. Herhangi bir aşama
+    başarısız olursa (tüm modeller tükenirse) None döner, o hisse atlanır."""
+    data_block = DATA_BLOCK_TEMPLATE.format(**candidate)
+    ticker = candidate["ticker"]
+
+    bear_prompt = BEAR_PROMPT_TEMPLATE.format(data_block=data_block)
+    bear = _call_gemini_json(bear_prompt, f"{ticker}-BEAR")
+    if bear is None:
+        return None
+    time.sleep(2)
+
+    bull_prompt = BULL_PROMPT_TEMPLATE.format(data_block=data_block)
+    bull = _call_gemini_json(bull_prompt, f"{ticker}-BULL")
+    if bull is None:
+        return None
+    time.sleep(2)
+
+    cro_prompt = CRO_PROMPT_TEMPLATE.format(
+        data_block=data_block,
+        bear_case=bear.get("bear_case", "N/A"),
+        key_risks=", ".join(bear.get("key_risks", []) or []) or "N/A",
+        value_trap_risk=bear.get("value_trap_risk", "N/A"),
+        bear_fv=bear.get("bear_fv", "N/A"),
+        bull_case=bull.get("bull_case", "N/A"),
+        catalysts=", ".join(bull.get("catalysts", []) or []) or "N/A",
+        growth_conviction=bull.get("growth_conviction", "N/A"),
+        bull_fv=bull.get("bull_fv", "N/A"),
+    )
+    cro = _call_gemini_json(cro_prompt, f"{ticker}-CRO")
+    if cro is None:
+        return None
+
+    cro["ticker"] = candidate["ticker"]
+    cro["name"] = candidate["name"]
+    cro["price"] = candidate["price"]
+    # Bear/Bull ham argümanlarını da saklıyoruz — ileride (ör. Telegram
+    # botu /analiz komutu) detay göstermek istersek elimizde olsun.
+    cro["_bear_case"] = bear.get("bear_case")
+    cro["_bull_case"] = bull.get("bull_case")
+    cro["_value_trap_risk"] = bear.get("value_trap_risk")
+    return cro
 
 
 def _finalize_price_based_ratios(fundamentals, price, ticker):
@@ -537,7 +625,7 @@ def round2_deep_analysis(candidates_df):
     for i, row in enumerate(records, 1):
         ticker = row["ticker"]
         price = row["price"]
-        print(f"  Derin analiz {i}/{len(records)}: {ticker}")
+        print(f"  Derin analiz {i}/{len(records)}: {ticker} (Bear -> Bull -> CRO)")
         fundamentals = fetch_fundamentals_isyatirim(ticker)
         fundamentals = _finalize_price_based_ratios(fundamentals, price, ticker)
         candidate = {**fundamentals, "ticker": ticker, "price": price}
