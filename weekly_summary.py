@@ -32,8 +32,8 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 # scanner.py'deki ile aynı yedekleme zinciri
 MODEL_CANDIDATES = [
+    "gemini-3.5-flash-lite",
     "gemini-2.5-flash-lite",
-    "gemini-3.6-flash-lite",
     "gemini-2.5-flash",
     "gemini-3.6-flash",
 ]
