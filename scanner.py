@@ -348,6 +348,60 @@ def _compute_screening_scores(df):
     return df
 
 
+# Büyük/orta/küçük ölçek dengesi: kullanıcı talebi üzerine eklendi. Ham
+# skora göre saf sıralama küçük şirketleri (düşük baz etkisiyle şişen
+# büyüme yüzdeleri sayesinde) sistematik olarak domine ediyordu. Bu yüzden
+# MAX_DEEP_CANDIDATES kontenjanını üç piyasa değeri katmanına bölüştürüyoruz
+# — her katmanda kendi içindeki en iyi skorlu şirketler seçiliyor.
+CAP_BUCKET_SLOTS = {"Büyük": 8, "Orta": 7, "Küçük": 7}   # toplam = MAX_DEEP_CANDIDATES
+
+
+def _stratified_candidate_selection(df):
+    """df zaten screening_score'a göre sıralı. Piyasa değerine göre üç
+    katmana ayırıp her katmandan CAP_BUCKET_SLOTS kadar en iyi skorluyu
+    seçer. Bir katmanda yeterli şirket yoksa, boşta kalan kontenjan genel
+    sıralamadan (katman gözetmeksizin) tamamlanır."""
+    known_mcap = df[df["market_cap"].notna() & (df["market_cap"] > 0)]
+
+    if len(known_mcap) >= 10:
+        q1 = known_mcap["market_cap"].quantile(1 / 3)
+        q2 = known_mcap["market_cap"].quantile(2 / 3)
+
+        def bucket_for(mcap):
+            if pd.isna(mcap) or mcap <= 0:
+                return "Küçük"   # piyasa değeri hesaplanamayanlar genelde çok küçük/veri zayıf şirketler
+            if mcap >= q2:
+                return "Büyük"
+            if mcap >= q1:
+                return "Orta"
+            return "Küçük"
+
+        df = df.copy()
+        df["cap_bucket"] = df["market_cap"].apply(bucket_for)
+    else:
+        # Yeterli piyasa değeri verisi yoksa katmanlama anlamsız, düz sıralamaya dön
+        df = df.copy()
+        df["cap_bucket"] = "Bilinmiyor"
+
+    selected_parts = []
+    selected_tickers = set()
+    for bucket, slots in CAP_BUCKET_SLOTS.items():
+        bucket_df = df[df["cap_bucket"] == bucket].head(slots)
+        selected_parts.append(bucket_df)
+        selected_tickers.update(bucket_df["ticker"])
+
+    selected = pd.concat(selected_parts) if selected_parts else df.head(0)
+
+    # Katmanlardan biri dolduramadıysa (örn. az şirket varsa) boşta kalan
+    # kontenjanı genel sıralamadan (katman gözetmeksizin) tamamla.
+    remaining_slots = MAX_DEEP_CANDIDATES - len(selected)
+    if remaining_slots > 0:
+        rest = df[~df["ticker"].isin(selected_tickers)].head(remaining_slots)
+        selected = pd.concat([selected, rest])
+
+    return selected.sort_values("screening_score", ascending=False).head(MAX_DEEP_CANDIDATES)
+
+
 def round1_screen(tickers):
     """TAM FUNDAMENTAL TARAMA (orijinal sistemin 49. bölümündeki ROUND 1).
 
@@ -419,8 +473,8 @@ def round1_screen(tickers):
         print("Hiçbir hisse için veri toplanamadı.")
         return df
 
-    # --- Fiyata bağlı çarpanları hesapla (F/K, PD/DD) -----------------------
-    pe_list, pb_list = [], []
+    # --- Fiyata bağlı çarpanları hesapla (F/K, PD/DD, Piyasa Değeri) --------
+    pe_list, pb_list, mcap_list = [], [], []
     for _, r in df.iterrows():
         eps_ann = r.get("_eps_annualized")
         ni_ann = r.get("_net_income_annualized")
@@ -434,9 +488,11 @@ def round1_screen(tickers):
                 pe = round(candidate_pe, 2)
 
         pb = None
+        market_cap = None
         if eps_ann and ni_ann and abs(eps_ann) > 1e-9 and equity and equity > 0 and price:
             shares = ni_ann / eps_ann
             if shares > 0:
+                market_cap = round(price * shares, 0)
                 bvps = equity / shares
                 if bvps > 0:
                     candidate_pb = price / bvps
@@ -445,9 +501,11 @@ def round1_screen(tickers):
 
         pe_list.append(pe)
         pb_list.append(pb)
+        mcap_list.append(market_cap)
 
     df["trailing_pe"] = pe_list
     df["price_to_book"] = pb_list
+    df["market_cap"] = mcap_list
 
     # --- Veri tamlığı kontrolü ----------------------------------------------
     # Verisi çok eksik olan şirketler nötr (0.5) skorlarla yapay olarak
@@ -466,11 +524,12 @@ def round1_screen(tickers):
     df = _compute_screening_scores(df)
     df = df.sort_values("screening_score", ascending=False)
 
-    top = df.head(MAX_DEEP_CANDIDATES).copy()
+    top = _stratified_candidate_selection(df)
     print("\nRound 1 tarama sonucu — Round 2'ye giden adaylar:")
     for _, r in top.iterrows():
         flag = " [DÜŞÜK LİKİDİTE]" if r.get("low_liquidity_flag") else ""
-        print(f"  {r['ticker']}: skor {r['screening_score']:.1f} "
+        cap = f" [{r.get('cap_bucket', '?')}]"
+        print(f"  {r['ticker']}: skor {r['screening_score']:.1f}{cap} "
               f"(değerleme {r['score_valuation']:.2f}, momentum {r['score_momentum']:.2f}, "
               f"ivme {r['score_acceleration']:.2f}, bilanço {r['score_balance']:.2f}, "
               f"divergence {r['score_divergence']:.2f}){flag}")
@@ -813,6 +872,7 @@ def fetch_fundamentals_isyatirim(ticker):
 
 
 DATA_BLOCK_TEMPLATE = """ŞİRKET: {name} ({ticker}){liquidity_note}
+Ölçek Kategorisi: {cap_bucket} (BIST piyasa değerine göre)
 Güncel Fiyat: {price} TL
 
 --- DEĞERLEME ---
@@ -1082,7 +1142,7 @@ def _build_candidate_for_agents(row):
         "trailing_pe", "price_to_book", "debt_to_equity", "net_debt_to_equity",
         "deleveraging", "cfo_to_net_income", "score_valuation", "score_momentum",
         "score_acceleration", "score_margin", "score_balance", "score_divergence",
-        "data_completeness",
+        "data_completeness", "cap_bucket",
     }
 
     out = {
@@ -1110,6 +1170,7 @@ def round2_deep_analysis(candidates_df):
             # Round 1'den gelen sayısal verileri de sakla (rapor/hafıza için)
             result["low_liquidity_flag"] = bool(row.get("low_liquidity_flag"))
             result["screening_score"] = round(float(row.get("screening_score", 0)), 1)
+            result["cap_bucket"] = row.get("cap_bucket")
             results.append(result)
         time.sleep(SLEEP_BETWEEN_GEMINI_CALLS)
     return results
@@ -1188,7 +1249,8 @@ def build_report(ranked, previous_ranking, total_scanned, deep_count):
         prev = prev_map.get(item["ticker"])
         prev_rank_str = f"#{prev['rank']}" if prev else "Yeni"
         liq = " ⚠️ DÜŞÜK LİKİDİTE" if item.get("low_liquidity_flag") else ""
-        lines.append(f"{medal} {i+1}. {item['ticker']} — {item.get('name','')}{liq}")
+        cap = f" [{item.get('cap_bucket')}]" if item.get("cap_bucket") else ""
+        lines.append(f"{medal} {i+1}. {item['ticker']} — {item.get('name','')}{cap}{liq}")
         lines.append(f"Alpha Score: {item.get('alpha_score','N/A')}/100  |  Data Confidence: {item.get('data_confidence','N/A')}/100")
         if item.get("screening_score") is not None:
             lines.append(f"Round 1 Tarama Skoru: {item.get('screening_score')}/100")
