@@ -1,23 +1,23 @@
 {
-  "date": "2026-09-16",
+  "date": "2026-09-17",
   "ranking": [
     {
-      "ticker": "SANEL",
+      "ticker": "FMIZP",
       "rank": 1,
-      "alpha_score": 72
+      "alpha_score": 74
     },
     {
-      "ticker": "AHGAZ",
+      "ticker": "SANEL",
       "rank": 2,
       "alpha_score": 72
     },
     {
-      "ticker": "FMIZP",
+      "ticker": "AHGAZ",
       "rank": 3,
-      "alpha_score": 68
+      "alpha_score": 72
     },
     {
-      "ticker": "YYLGD",
+      "ticker": "TCKRC",
       "rank": 4,
       "alpha_score": 68
     },
@@ -27,27 +27,27 @@
       "alpha_score": 68
     },
     {
-      "ticker": "EREGL",
+      "ticker": "YYLGD",
       "rank": 6,
       "alpha_score": 68
     },
     {
-      "ticker": "TCKRC",
+      "ticker": "TUPRS",
       "rank": 7,
-      "alpha_score": 62
+      "alpha_score": 68
+    },
+    {
+      "ticker": "AKSA",
+      "rank": 8,
+      "alpha_score": 68
     },
     {
       "ticker": "METEN",
-      "rank": 8,
-      "alpha_score": 62
-    },
-    {
-      "ticker": "ARSAN",
       "rank": 9,
       "alpha_score": 62
     },
     {
-      "ticker": "KOPOL",
+      "ticker": "CVKMD",
       "rank": 10,
       "alpha_score": 62
     },
@@ -57,24 +57,24 @@
       "alpha_score": 62
     },
     {
-      "ticker": "SAMAT",
+      "ticker": "SAFKR",
       "rank": 12,
       "alpha_score": 62
     },
     {
-      "ticker": "BASGZ",
+      "ticker": "EREGL",
       "rank": 13,
       "alpha_score": 62
     },
     {
-      "ticker": "ARMGD",
+      "ticker": "BASGZ",
       "rank": 14,
-      "alpha_score": 58
+      "alpha_score": 62
     },
     {
-      "ticker": "SAFKR",
+      "ticker": "ISDMR",
       "rank": 15,
-      "alpha_score": 58
+      "alpha_score": 62
     }
   ]
 }

@@ -158,5 +158,85 @@
         "alpha_score": 58
       }
     ]
+  },
+  {
+    "date": "2026-09-17",
+    "ranking": [
+      {
+        "ticker": "FMIZP",
+        "rank": 1,
+        "alpha_score": 74
+      },
+      {
+        "ticker": "SANEL",
+        "rank": 2,
+        "alpha_score": 72
+      },
+      {
+        "ticker": "AHGAZ",
+        "rank": 3,
+        "alpha_score": 72
+      },
+      {
+        "ticker": "TCKRC",
+        "rank": 4,
+        "alpha_score": 68
+      },
+      {
+        "ticker": "DMRGD",
+        "rank": 5,
+        "alpha_score": 68
+      },
+      {
+        "ticker": "YYLGD",
+        "rank": 6,
+        "alpha_score": 68
+      },
+      {
+        "ticker": "TUPRS",
+        "rank": 7,
+        "alpha_score": 68
+      },
+      {
+        "ticker": "AKSA",
+        "rank": 8,
+        "alpha_score": 68
+      },
+      {
+        "ticker": "METEN",
+        "rank": 9,
+        "alpha_score": 62
+      },
+      {
+        "ticker": "CVKMD",
+        "rank": 10,
+        "alpha_score": 62
+      },
+      {
+        "ticker": "ASGYO",
+        "rank": 11,
+        "alpha_score": 62
+      },
+      {
+        "ticker": "SAFKR",
+        "rank": 12,
+        "alpha_score": 62
+      },
+      {
+        "ticker": "EREGL",
+        "rank": 13,
+        "alpha_score": 62
+      },
+      {
+        "ticker": "BASGZ",
+        "rank": 14,
+        "alpha_score": 62
+      },
+      {
+        "ticker": "ISDMR",
+        "rank": 15,
+        "alpha_score": 62
+      }
+    ]
   }
 ]
