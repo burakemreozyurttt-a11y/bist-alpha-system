@@ -83,79 +83,79 @@
     "date": "2026-09-16",
     "ranking": [
       {
-        "ticker": "TUPRS",
+        "ticker": "SANEL",
         "rank": 1,
+        "alpha_score": 72
+      },
+      {
+        "ticker": "FMIZP",
+        "rank": 2,
         "alpha_score": 68
       },
       {
-        "ticker": "THYAO",
-        "rank": 2,
-        "alpha_score": 62
-      },
-      {
-        "ticker": "ASTOR",
+        "ticker": "DMRGD",
         "rank": 3,
-        "alpha_score": 62
+        "alpha_score": 68
       },
       {
-        "ticker": "BIMAS",
+        "ticker": "AHGAZ",
         "rank": 4,
-        "alpha_score": 62
+        "alpha_score": 68
       },
       {
-        "ticker": "AKBNK",
+        "ticker": "INDES",
         "rank": 5,
-        "alpha_score": 62
+        "alpha_score": 68
       },
       {
-        "ticker": "GUBRF",
+        "ticker": "FRMPL",
         "rank": 6,
+        "alpha_score": 68
+      },
+      {
+        "ticker": "TCKRC",
+        "rank": 7,
         "alpha_score": 62
       },
       {
-        "ticker": "ASELS",
-        "rank": 7,
-        "alpha_score": 58
-      },
-      {
-        "ticker": "BRSAN",
+        "ticker": "METEN",
         "rank": 8,
-        "alpha_score": 52
+        "alpha_score": 62
       },
       {
-        "ticker": "MGROS",
+        "ticker": "KOPOL",
         "rank": 9,
-        "alpha_score": 52
+        "alpha_score": 62
       },
       {
-        "ticker": "OZATD",
+        "ticker": "CVKMD",
         "rank": 10,
-        "alpha_score": 45
+        "alpha_score": 62
       },
       {
-        "ticker": "ODINE",
+        "ticker": "SAFKR",
         "rank": 11,
-        "alpha_score": 45
+        "alpha_score": 62
       },
       {
-        "ticker": "KCHOL",
+        "ticker": "GOLTS",
         "rank": 12,
-        "alpha_score": 45
+        "alpha_score": 62
       },
       {
-        "ticker": "GUNDG",
+        "ticker": "ASGYO",
         "rank": 13,
-        "alpha_score": 45
+        "alpha_score": 62
       },
       {
-        "ticker": "DOCO",
+        "ticker": "SAMAT",
         "rank": 14,
-        "alpha_score": 45
+        "alpha_score": 62
       },
       {
-        "ticker": "EGEEN",
+        "ticker": "EREGL",
         "rank": 15,
-        "alpha_score": 42
+        "alpha_score": 62
       }
     ]
   }
