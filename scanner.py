@@ -101,12 +101,46 @@ FIN_REQUEST_DELAY = 1.2           # finansal veri istekleri arası bekleme (sani
 # Bilanço/gelir tablosu kalem kodları (THYAO üzerinde doğrulandı, standart
 # İş Yatırım XI_29 kod şeması olduğu için diğer şirketlerde de aynı olmalı)
 ITEM_REVENUE = "3C"                # Satış Gelirleri
+ITEM_GROSS_PROFIT = "3D"           # BRÜT KAR (ZARAR)
+ITEM_OPERATING_PROFIT = "3DF"      # FAALİYET KARI (ZARARI)
 ITEM_NET_INCOME_PARENT = "3Z"      # Ana Ortaklık Payları (net kâr)
 ITEM_EPS = "3ZD"                   # Hisse Başına Kazanç
 ITEM_TOTAL_ASSETS = "1BL"          # TOPLAM VARLIKLAR
 ITEM_PARENT_EQUITY = "2O"          # Ana Ortaklığa Ait Özkaynaklar
 ITEM_SHORT_TERM_LIAB = "2A"        # Kısa Vadeli Yükümlülükler
 ITEM_LONG_TERM_LIAB = "2B"         # Uzun Vadeli Yükümlülükler
+ITEM_CASH = "1AA"                  # Nakit ve Nakit Benzerleri
+ITEM_ST_FIN_DEBT = "2AA"           # Kısa Vadeli Finansal Borçlar
+ITEM_LT_FIN_DEBT = "2BA"           # Uzun Vadeli Finansal Borçlar
+ITEM_CFO = "4C"                    # İşletme Faaliyetlerinden Kaynaklanan Net Nakit
+ITEM_DEPRECIATION = "4B"           # Amortisman Giderleri
+
+# --- Bilanço önbelleği ------------------------------------------------------
+# Bilançolar sadece çeyrekte bir değişir, her gün 720 şirketin bilançosunu
+# yeniden çekmek anlamsız (ve saatler sürer). Bu yüzden diskte önbellekliyoruz
+# ve sadece CACHE_MAX_AGE_DAYS'ten eski kayıtları yeniliyoruz.
+FIN_CACHE_FILE = os.path.join(os.path.dirname(__file__), "financials_cache.json")
+CACHE_MAX_AGE_DAYS = 7
+CACHE_SAVE_EVERY = 25              # her N şirkette bir önbelleği diske yaz (kesinti olursa ilerleme kaybolmasın)
+
+# --- Round 1 tarama skoru ağırlıkları --------------------------------------
+# Orijinal sistemin 25. bölümündeki Alpha Score ağırlıklarının, LLM'siz
+# hesaplanabilen (tamamen sayısal) alt kümesi. Katalizör, guidance ve
+# beklenti revizyonu gibi nitel bileşenler Round 2'de Bear/Bull/CRO
+# ajanlarına bırakılıyor.
+W_VALUATION = 0.20                 # ucuzluk (F/K, PD/DD, earnings yield)
+W_MOMENTUM = 0.25                  # ciro + kâr büyümesi (YoY)
+W_ACCELERATION = 0.15              # büyümenin hızlanması (Bölüm 14)
+W_MARGIN = 0.10                    # marj trendi
+W_BALANCE = 0.15                   # borçluluk / deleveraging (Bölüm 16)
+W_DIVERGENCE = 0.15                # temel iyileşme var ama fiyat tepki vermemiş (Bölüm 21)
+
+# Likidite: orijinal sistemin 5. bölümü "likidite problemi olan şirketi
+# otomatik elemek zorunda değilsin ama açıkça işaretle" diyor. Bu yüzden
+# eşiği sert bir filtre olarak değil, bir BAYRAK olarak kullanıyoruz.
+LIQUIDITY_FLAG_THRESHOLD_TRY = 3_000_000   # bunun altı "DÜŞÜK LİKİDİTE" damgası alır
+ABSOLUTE_MIN_TURNOVER_TRY = 250_000        # bunun altı gerçekten alınıp satılamaz, elenir
+MIN_DATA_COMPLETENESS = 0.5                # bu orandan az veri varsa sıralamaya sokma
 
 TR_TZ = timezone(timedelta(hours=3))
 
@@ -164,13 +198,18 @@ def _pick_column(df, candidates):
     return None
 
 
+PRICE_HISTORY_DAYS = 130          # 60 işlem günü getirisi için ~130 takvim günü gerekir
+
+
 def fetch_price_snapshot(ticker):
-    """İş Yatırım'dan son ~20 günlük fiyat/hacim verisini çeker, güncel fiyatı
-    ve ortalama günlük TL hacmini (likidite göstergesi) hesaplar."""
+    """İş Yatırım'dan son ~130 takvim günlük fiyat/hacim verisini çeker.
+    Güncel fiyat, ortalama günlük TL hacmi (likidite) ve 5/20/60 işlem
+    günlük getirileri (orijinal sistemin 21. bölümündeki Fundamental-Price
+    Divergence hesabı için) döndürür."""
     global _debug_columns_printed
 
     end_date = datetime.now(TR_TZ).strftime("%d-%m-%Y")
-    start_date = (datetime.now(TR_TZ) - timedelta(days=IY_LOOKBACK_DAYS * 2)).strftime("%d-%m-%Y")
+    start_date = (datetime.now(TR_TZ) - timedelta(days=PRICE_HISTORY_DAYS)).strftime("%d-%m-%Y")
 
     for attempt in range(1, IY_MAX_RETRIES + 1):
         try:
@@ -189,19 +228,40 @@ def fetch_price_snapshot(ticker):
             if close_col is None:
                 raise ValueError(f"Kapanış fiyatı sütunu bulunamadı. Mevcut sütunlar: {df.columns.tolist()}")
 
-            last_price = float(df[close_col].iloc[-1])
+            closes = pd.to_numeric(df[close_col], errors="coerce").dropna()
+            if closes.empty:
+                raise ValueError("Geçerli kapanış fiyatı yok")
+
+            last_price = float(closes.iloc[-1])
+
+            def _return_over(n_days):
+                """n işlem günü önceki fiyata göre yüzde getiri."""
+                if len(closes) > n_days:
+                    past = float(closes.iloc[-(n_days + 1)])
+                    if past > 0:
+                        return (last_price / past) - 1
+                return None
 
             if vol_try_col is not None:
-                avg_turnover = float(df[vol_try_col].tail(IY_LOOKBACK_DAYS).mean())
+                turnover_series = pd.to_numeric(df[vol_try_col], errors="coerce")
             elif vol_lot_col is not None:
-                avg_turnover = float((df[close_col] * df[vol_lot_col]).tail(IY_LOOKBACK_DAYS).mean())
+                turnover_series = pd.to_numeric(df[vol_lot_col], errors="coerce") * pd.to_numeric(df[close_col], errors="coerce")
             else:
-                avg_turnover = None  # likidite hesaplanamıyor, filtrede elenecek
+                turnover_series = None
+
+            avg_turnover = None
+            if turnover_series is not None:
+                tail = turnover_series.dropna().tail(20)
+                if not tail.empty:
+                    avg_turnover = float(tail.mean())
 
             return {
                 "ticker": ticker,
                 "price": last_price,
                 "avg_daily_turnover_try": avg_turnover,
+                "return_5d": _return_over(5),
+                "return_20d": _return_over(20),
+                "return_60d": _return_over(60),
             }
         except Exception as e:
             if attempt < IY_MAX_RETRIES:
@@ -216,15 +276,100 @@ ROUND1_TIME_BUDGET_SECONDS = 5 * 3600   # Round 1 en fazla ~5 saat sürsün (18:
 CONSECUTIVE_FAILURE_CIRCUIT_BREAKER = 150   # bu kadar üst üste başarısızlık = gerçek bir engelleme, dur
 
 
+def _pct_rank(series, ascending=True):
+    """Yüzdelik dilim sıralaması; eksik veri nötr (0.5) kabul edilir."""
+    return series.rank(pct=True, ascending=ascending, na_option="keep").fillna(0.5)
+
+
+def _compute_screening_scores(df):
+    """Orijinal sistemin 25. bölümündeki Alpha Score mantığının sayısal
+    (LLM'siz) karşılığı. Her bileşen kendi içinde evrene göre yüzdelik
+    dilime çevrilir, sonra ağırlıklandırılır."""
+
+    # --- A) DEĞERLEME (ucuzluk) ---------------------------------------------
+    # Earnings yield = 1/(F/K); yüksek olan daha ucuz demek
+    df["earnings_yield"] = df["trailing_pe"].apply(
+        lambda x: (1.0 / x) if (isinstance(x, (int, float)) and x and x > 0) else None
+    )
+    score_ey = _pct_rank(df["earnings_yield"], ascending=True)
+    score_pb = _pct_rank(df["price_to_book"].where(df["price_to_book"] > 0), ascending=False)
+    valuation_score = (score_ey * 0.6) + (score_pb * 0.4)
+
+    # --- B) FINANCIAL MOMENTUM (Bölüm 13) -----------------------------------
+    score_rev_g = _pct_rank(df["revenue_growth"], ascending=True)
+    score_earn_g = _pct_rank(df["earnings_growth"], ascending=True)
+    momentum_score = (score_rev_g * 0.4) + (score_earn_g * 0.6)
+
+    # --- C) EARNINGS ACCELERATION (Bölüm 14) --------------------------------
+    score_rev_acc = _pct_rank(df["revenue_acceleration"], ascending=True)
+    score_earn_acc = _pct_rank(df["earnings_acceleration"], ascending=True)
+    acceleration_score = (score_rev_acc * 0.4) + (score_earn_acc * 0.6)
+
+    # --- D) MARJ TRENDİ -----------------------------------------------------
+    score_gm = _pct_rank(df["gross_margin_trend"], ascending=True)
+    score_om = _pct_rank(df["operating_margin_trend"], ascending=True)
+    margin_score = (score_gm * 0.5) + (score_om * 0.5)
+
+    # --- E) BİLANÇO (Bölüm 16) ----------------------------------------------
+    # Düşük borç iyi (ascending=False), deleveraging (borç azalması) iyi
+    score_nd = _pct_rank(df["net_debt_to_equity"], ascending=False)
+    score_delev = _pct_rank(df["deleveraging"], ascending=True)
+    score_roe = _pct_rank(df["roe"], ascending=True)
+    balance_score = (score_nd * 0.4) + (score_delev * 0.25) + (score_roe * 0.35)
+
+    # --- F) FUNDAMENTAL-PRICE DIVERGENCE (Bölüm 21) -------------------------
+    # Aradığımız yapı: Temeller ↑↑ ama fiyat ↔ veya ↓ (henüz fiyatlanmamış)
+    # "fundamental güç" ile "fiyat tepkisi" arasındaki farkı ölçüyoruz.
+    fundamental_strength = (momentum_score * 0.5) + (acceleration_score * 0.3) + (margin_score * 0.2)
+    price_response = (
+        _pct_rank(df["return_20d"], ascending=True) * 0.5
+        + _pct_rank(df["return_60d"], ascending=True) * 0.5
+    )
+    # Fark pozitifse: temel güçlü ama fiyat tepki vermemiş -> fırsat
+    divergence_raw = fundamental_strength - price_response
+    divergence_score = _pct_rank(divergence_raw, ascending=True)
+
+    df["score_valuation"] = valuation_score
+    df["score_momentum"] = momentum_score
+    df["score_acceleration"] = acceleration_score
+    df["score_margin"] = margin_score
+    df["score_balance"] = balance_score
+    df["score_divergence"] = divergence_score
+
+    df["screening_score"] = (
+        valuation_score * W_VALUATION
+        + momentum_score * W_MOMENTUM
+        + acceleration_score * W_ACCELERATION
+        + margin_score * W_MARGIN
+        + balance_score * W_BALANCE
+        + divergence_score * W_DIVERGENCE
+    ) * 100
+
+    return df
+
+
 def round1_screen(tickers):
-    """Tüm evreni İş Yatırım'dan seri şekilde çeker, likidite filtresi
-    uygular ve en likit MAX_DEEP_CANDIDATES hisseyi Round 2'ye aday gösterir.
-    (Not: F/K, ROE gibi fundamental oranlar burada YOK — onlar sadece
-    Round 2'deki finalistler için yfinance'tan çekiliyor, bkz. round2_deep_analysis.)"""
+    """TAM FUNDAMENTAL TARAMA (orijinal sistemin 49. bölümündeki ROUND 1).
+
+    Her hisse için:
+      - fiyat/hacim geçmişi (5/20/60 günlük getiriler dahil)
+      - bilanço/gelir tablosu (önbellekli — çeyrekte bir yenilenir)
+    çekilir; ardından değerleme, momentum, ivmelenme, marj, bilanço ve
+    fundamental-price divergence bileşenlerinden bir tarama skoru hesaplanır.
+
+    Likidite artık sert bir filtre DEĞİL (orijinal sistem 5. bölüm: "likidite
+    problemi olan şirketi otomatik elemek zorunda değilsin ama açıkça
+    işaretle") — sadece gerçekten alınıp satılamayacak kadar sığ olanlar
+    elenir, geri kalanı DÜŞÜK LİKİDİTE bayrağıyla işaretlenir.
+    """
     rows = []
     total = len(tickers)
     consecutive_failures = 0
     start_time = time.time()
+    cache = load_fin_cache()
+    fetched_count = 0
+
+    print(f"Önbellekte {len(cache)} şirketin bilanço verisi var.")
 
     for i, tk in enumerate(tickers, 1):
         elapsed = time.time() - start_time
@@ -232,41 +377,106 @@ def round1_screen(tickers):
             print(f"Round 1 zaman bütçesini ({ROUND1_TIME_BUDGET_SECONDS}s) aştı, {i-1}/{total} hisseyle devam ediliyor.")
             break
 
-        res = fetch_price_snapshot(tk)
-        if res:
-            rows.append(res)
-            consecutive_failures = 0
-        else:
+        price_data = fetch_price_snapshot(tk)
+        if not price_data:
             consecutive_failures += 1
+            if consecutive_failures >= CONSECUTIVE_FAILURE_CIRCUIT_BREAKER:
+                print(f"Üst üste {CONSECUTIVE_FAILURE_CIRCUIT_BREAKER} başarısız istek, veri kaynağı muhtemelen bu IP'yi engelledi. Duruyorum.")
+                break
+            time.sleep(random.uniform(IY_MIN_DELAY, IY_MAX_DELAY))
+            continue
+
+        consecutive_failures = 0
+
+        # Gerçekten alınıp satılamayacak kadar sığ olanları erkenden ele —
+        # bunlar için bilanço çekmeye değmez (zaman tasarrufu)
+        turnover = price_data.get("avg_daily_turnover_try") or 0
+        if turnover < ABSOLUTE_MIN_TURNOVER_TRY:
+            time.sleep(random.uniform(IY_MIN_DELAY, IY_MAX_DELAY))
+            continue
+
+        fundamentals, was_fetched = get_fundamentals_cached(tk, cache)
+        if was_fetched:
+            fetched_count += 1
+            if fetched_count % CACHE_SAVE_EVERY == 0:
+                save_fin_cache(cache)   # kesinti olursa ilerleme kaybolmasın
+
+        row = {**price_data, **fundamentals}
+        row["low_liquidity_flag"] = turnover < LIQUIDITY_FLAG_THRESHOLD_TRY
+        rows.append(row)
 
         if i % 25 == 0 or i == total:
-            print(f"  ...{i}/{total} hisse tarandı (şu ana kadar başarılı: {len(rows)}, geçen süre: {elapsed:.0f}s)")
-
-        if consecutive_failures >= CONSECUTIVE_FAILURE_CIRCUIT_BREAKER:
-            print(f"Üst üste {CONSECUTIVE_FAILURE_CIRCUIT_BREAKER} başarısız istek, İş Yatırım muhtemelen bu IP'yi tamamen engelledi. Taramayı erken durduruyorum.")
-            break
+            print(f"  ...{i}/{total} hisse tarandı (veri toplanan: {len(rows)}, "
+                  f"bilanço ağdan çekilen: {fetched_count}, geçen süre: {elapsed:.0f}s)")
 
         time.sleep(random.uniform(IY_MIN_DELAY, IY_MAX_DELAY))
 
+    save_fin_cache(cache)
+
     df = pd.DataFrame(rows)
-    print(f"Veri çekilebilen hisse sayısı: {len(df)} / {total}")
-
+    print(f"Veri toplanabilen hisse sayısı: {len(df)} / {total}")
     if df.empty:
-        print("Hiçbir hisse için veri çekilemedi.")
+        print("Hiçbir hisse için veri toplanamadı.")
         return df
 
-    # Likidite filtresi
-    df = df[df["avg_daily_turnover_try"].fillna(0) >= MIN_AVG_DAILY_TURNOVER_TRY].copy()
-    print(f"Likidite filtresinden geçen hisse sayısı: {len(df)}")
+    # --- Fiyata bağlı çarpanları hesapla (F/K, PD/DD) -----------------------
+    pe_list, pb_list = [], []
+    for _, r in df.iterrows():
+        eps_ann = r.get("_eps_annualized")
+        ni_ann = r.get("_net_income_annualized")
+        equity = r.get("_equity_latest")
+        price = r.get("price")
 
+        pe = None
+        if eps_ann and eps_ann > 0 and price:
+            candidate_pe = price / eps_ann
+            if 1.0 <= candidate_pe <= 500:
+                pe = round(candidate_pe, 2)
+
+        pb = None
+        if eps_ann and ni_ann and abs(eps_ann) > 1e-9 and equity and equity > 0 and price:
+            shares = ni_ann / eps_ann
+            if shares > 0:
+                bvps = equity / shares
+                if bvps > 0:
+                    candidate_pb = price / bvps
+                    if 0.1 <= candidate_pb <= 50:
+                        pb = round(candidate_pb, 2)
+
+        pe_list.append(pe)
+        pb_list.append(pb)
+
+    df["trailing_pe"] = pe_list
+    df["price_to_book"] = pb_list
+
+    # --- Veri tamlığı kontrolü ----------------------------------------------
+    # Verisi çok eksik olan şirketler nötr (0.5) skorlarla yapay olarak
+    # yukarı çıkabilir; bunları sıralamaya sokmuyoruz.
+    key_fields = ["trailing_pe", "price_to_book", "revenue_growth", "earnings_growth",
+                  "roe", "net_debt_to_equity", "return_20d"]
+    df["data_completeness"] = df[key_fields].notna().sum(axis=1) / len(key_fields)
+
+    before = len(df)
+    df = df[df["data_completeness"] >= MIN_DATA_COMPLETENESS].copy()
+    print(f"Yeterli veriye sahip hisse sayısı: {len(df)} / {before}")
     if df.empty:
         return df
 
-    # Fundamental veri henüz yok, en likit hisseleri aday gösteriyoruz
-    # (likit hisseler genelde daha iyi kapsanan, daha güvenilir veriye sahip
-    # orta/büyük ölçekli şirketlerdir).
-    df = df.sort_values("avg_daily_turnover_try", ascending=False)
-    return df.head(MAX_DEEP_CANDIDATES)
+    # --- Tarama skorunu hesapla ---------------------------------------------
+    df = _compute_screening_scores(df)
+    df = df.sort_values("screening_score", ascending=False)
+
+    top = df.head(MAX_DEEP_CANDIDATES).copy()
+    print("\nRound 1 tarama sonucu — Round 2'ye giden adaylar:")
+    for _, r in top.iterrows():
+        flag = " [DÜŞÜK LİKİDİTE]" if r.get("low_liquidity_flag") else ""
+        print(f"  {r['ticker']}: skor {r['screening_score']:.1f} "
+              f"(değerleme {r['score_valuation']:.2f}, momentum {r['score_momentum']:.2f}, "
+              f"ivme {r['score_acceleration']:.2f}, bilanço {r['score_balance']:.2f}, "
+              f"divergence {r['score_divergence']:.2f}){flag}")
+    print()
+
+    return top
 
 
 # --------------------------------------------------------------------------
@@ -340,19 +550,86 @@ def _safe_div(a, b):
     return a / b
 
 
-def fetch_fundamentals_isyatirim(ticker):
-    """İş Yatırım'ın bilanço/gelir tablosu verisinden F/K, ROE, PD/DD, borç/
-    özsermaye ve büyüme oranlarını KENDİMİZ hesaplıyoruz. Veri gelmezse (ya
-    da bir kalem eksikse) o alan N/A olarak işaretlenir, uydurulmaz."""
-    fields = {
-        "name": ticker, "sector": "N/A", "industry": "N/A", "market_cap": "N/A",
-        "trailing_pe": "N/A", "forward_pe": "N/A", "price_to_book": "N/A",
-        "roe": "N/A", "revenue_growth": "N/A", "earnings_growth": "N/A",
-        "debt_to_equity": "N/A", "dividend_yield": "N/A",
-    }
+def _series_for_item(df, item_code, quarter_cols):
+    """Bir kalemin tüm çeyrek değerlerini [(yıl, dönem_ay, değer), ...] olarak
+    kronolojik sırada döndürür."""
+    row = _get_item_row(df, item_code)
+    if row is None:
+        return []
+    out = []
+    for year, period, col in quarter_cols:
+        val = row.get(col)
+        if pd.notna(val):
+            try:
+                out.append((year, period, float(val)))
+            except (TypeError, ValueError):
+                continue
+    return out
 
+
+def _decumulate(series):
+    """İş Yatırım gelir tablosu kalemleri KÜMÜLATİFtir (3/6/9/12 aylık birikimli).
+    Bunları tek tek çeyreklere ayırır: Q2 = 6ay - 3ay, Q3 = 9ay - 6ay ...
+    Böylece çeyreklik büyüme ve ivmelenme doğru hesaplanabilir (Bölüm 13/14)."""
+    by_year = {}
+    for year, period, val in series:
+        by_year.setdefault(year, {})[period] = val
+
+    quarterly = []
+    for year in sorted(by_year):
+        periods = by_year[year]
+        for period in sorted(periods):
+            q_index = period // 3          # 3->1, 6->2, 9->3, 12->4
+            prev_period = period - 3
+            if prev_period >= 3 and prev_period in periods:
+                value = periods[period] - periods[prev_period]
+            else:
+                value = periods[period]     # yılın ilk çeyreği, zaten kümülatif değil
+            quarterly.append((year, q_index, value))
+    return quarterly
+
+
+def _yoy_growth_for_quarter(quarterly, offset=0):
+    """Sondan `offset` çeyrek geriden başlayarak, o çeyreğin bir önceki yılın
+    aynı çeyreğine göre büyümesini hesaplar."""
+    if len(quarterly) < offset + 1:
+        return None
+    year, q_index, value = quarterly[-(offset + 1)]
+    for y, q, v in quarterly:
+        if y == year - 1 and q == q_index:
+            if v and v != 0:
+                return (value / abs(v)) - 1 if v > 0 else None
+            return None
+    return None
+
+
+def _margin_trend(revenue_q, profit_q):
+    """Son çeyrek marjı ile bir önceki yılın aynı çeyreğindeki marjı
+    karşılaştırır (marj genişlemesi pozitif sinyaldir)."""
+    if not revenue_q or not profit_q:
+        return None
+    rev_map = {(y, q): v for y, q, v in revenue_q}
+    prof_map = {(y, q): v for y, q, v in profit_q}
+
+    latest_key = revenue_q[-1][:2]
+    prior_key = (latest_key[0] - 1, latest_key[1])
+
+    def margin(key):
+        rev = rev_map.get(key)
+        prof = prof_map.get(key)
+        if rev and rev > 0 and prof is not None:
+            return prof / rev
+        return None
+
+    m_now, m_prior = margin(latest_key), margin(prior_key)
+    if m_now is None or m_prior is None:
+        return None
+    return m_now - m_prior
+
+
+def _fetch_financials_df(ticker):
+    """İş Yatırım'dan ham bilanço DataFrame'ini çeker (format denemeleriyle)."""
     this_year = datetime.now(TR_TZ).year
-    df = None
     for group in FIN_GROUPS_TO_TRY:
         try:
             candidate_df = isy_fetch_financials(
@@ -360,78 +637,234 @@ def fetch_fundamentals_isyatirim(ticker):
                 financial_group=group,
             )
             if candidate_df is not None and not candidate_df.empty:
-                df = candidate_df
-                break
+                return candidate_df
         except Exception:
             pass
         time.sleep(FIN_REQUEST_DELAY)
+    return None
 
+
+def compute_fundamentals(ticker):
+    """Bir şirketin tüm sayısal temel göstergelerini hesaplar.
+    Orijinal sistemin 13 (momentum), 14 (ivmelenme), 16 (bilanço) ve
+    kısmen 15 (nakit akış kalitesi) bölümlerine karşılık gelir.
+    Veri yoksa ilgili alan None kalır — ASLA uydurulmaz."""
+    out = {
+        "name": ticker, "sector": "N/A", "industry": "N/A",
+        "revenue_growth": None, "earnings_growth": None,
+        "revenue_growth_prev_q": None, "earnings_growth_prev_q": None,
+        "revenue_acceleration": None, "earnings_acceleration": None,
+        "gross_margin_trend": None, "operating_margin_trend": None,
+        "roe": None, "debt_to_equity": None, "net_debt_to_equity": None,
+        "deleveraging": None, "cfo_to_net_income": None,
+        "_eps_annualized": None, "_net_income_annualized": None,
+        "_equity_latest": None,
+    }
+
+    df = _fetch_financials_df(ticker)
     if df is None:
-        print(f"  {ticker}: bilanço verisi hiçbir formatta bulunamadı, N/A ile devam")
-        return fields
+        return out
 
     quarter_cols = _quarter_columns_sorted(df)
     if not quarter_cols:
-        return fields
+        return out
 
     try:
+        # --- Kümülatif (yıl-başından-bugüne) değerler -----------------------
         revenue_latest, revenue_prior, period = _latest_and_prior_year(df, ITEM_REVENUE, quarter_cols)
         net_income_latest, net_income_prior, _ = _latest_and_prior_year(df, ITEM_NET_INCOME_PARENT, quarter_cols)
         eps_latest, _, _ = _latest_and_prior_year(df, ITEM_EPS, quarter_cols)
         equity_latest, _, _ = _latest_and_prior_year(df, ITEM_PARENT_EQUITY, quarter_cols)
-        st_liab_latest, _, _ = _latest_and_prior_year(df, ITEM_SHORT_TERM_LIAB, quarter_cols)
-        lt_liab_latest, _, _ = _latest_and_prior_year(df, ITEM_LONG_TERM_LIAB, quarter_cols)
+        st_liab, _, _ = _latest_and_prior_year(df, ITEM_SHORT_TERM_LIAB, quarter_cols)
+        lt_liab, _, _ = _latest_and_prior_year(df, ITEM_LONG_TERM_LIAB, quarter_cols)
+        cash, _, _ = _latest_and_prior_year(df, ITEM_CASH, quarter_cols)
+        st_fin_debt, _, _ = _latest_and_prior_year(df, ITEM_ST_FIN_DEBT, quarter_cols)
+        lt_fin_debt, _, _ = _latest_and_prior_year(df, ITEM_LT_FIN_DEBT, quarter_cols)
+        cfo_latest, _, _ = _latest_and_prior_year(df, ITEM_CFO, quarter_cols)
 
-        # Büyüme oranları: aynı dönemin bir önceki yıla göre değişimi (YoY)
-        if revenue_latest is not None and revenue_prior:
-            fields["revenue_growth"] = round((revenue_latest / revenue_prior - 1), 4)
-        if net_income_latest is not None and net_income_prior:
-            fields["earnings_growth"] = round((net_income_latest / net_income_prior - 1), 4)
+        # --- Bölüm 13: Financial Momentum (YoY, kümülatif bazda) ------------
+        if revenue_latest is not None and revenue_prior and revenue_prior > 0:
+            out["revenue_growth"] = round((revenue_latest / revenue_prior) - 1, 4)
+        if net_income_latest is not None and net_income_prior and net_income_prior > 0:
+            out["earnings_growth"] = round((net_income_latest / net_income_prior) - 1, 4)
 
-        # Yıllıklandırılmış (TTM'e yakın) net kâr ve EPS
+        # --- Bölüm 14: Earnings Acceleration (çeyreklik bazda) --------------
+        rev_series = _series_for_item(df, ITEM_REVENUE, quarter_cols)
+        ni_series = _series_for_item(df, ITEM_NET_INCOME_PARENT, quarter_cols)
+        gp_series = _series_for_item(df, ITEM_GROSS_PROFIT, quarter_cols)
+        op_series = _series_for_item(df, ITEM_OPERATING_PROFIT, quarter_cols)
+
+        rev_q = _decumulate(rev_series)
+        ni_q = _decumulate(ni_series)
+        gp_q = _decumulate(gp_series)
+        op_q = _decumulate(op_series)
+
+        rev_g_now = _yoy_growth_for_quarter(rev_q, 0)
+        rev_g_prev = _yoy_growth_for_quarter(rev_q, 1)
+        ni_g_now = _yoy_growth_for_quarter(ni_q, 0)
+        ni_g_prev = _yoy_growth_for_quarter(ni_q, 1)
+
+        if rev_g_now is not None:
+            out["revenue_growth_prev_q"] = round(rev_g_prev, 4) if rev_g_prev is not None else None
+            if rev_g_prev is not None:
+                out["revenue_acceleration"] = round(rev_g_now - rev_g_prev, 4)
+        if ni_g_now is not None:
+            out["earnings_growth_prev_q"] = round(ni_g_prev, 4) if ni_g_prev is not None else None
+            if ni_g_prev is not None:
+                out["earnings_acceleration"] = round(ni_g_now - ni_g_prev, 4)
+
+        # --- Marj trendi ---------------------------------------------------
+        gm_trend = _margin_trend(rev_q, gp_q)
+        if gm_trend is not None:
+            out["gross_margin_trend"] = round(gm_trend, 4)
+        om_trend = _margin_trend(rev_q, op_q)
+        if om_trend is not None:
+            out["operating_margin_trend"] = round(om_trend, 4)
+
+        # --- Yıllıklandırma ------------------------------------------------
         net_income_annualized = _annualize(net_income_latest, period)
         eps_annualized = _annualize(eps_latest, period)
+        out["_eps_annualized"] = eps_annualized
+        out["_net_income_annualized"] = net_income_annualized
+        out["_equity_latest"] = equity_latest
 
-        # ROE = yıllıklandırılmış net kâr / son özkaynak
         roe = _safe_div(net_income_annualized, equity_latest)
         if roe is not None:
-            fields["roe"] = round(roe, 4)
+            out["roe"] = round(roe, 4)
 
-        # Borç / Özkaynak
-        if st_liab_latest is not None and lt_liab_latest is not None:
-            dte = _safe_div(st_liab_latest + lt_liab_latest, equity_latest)
+        # --- Bölüm 16: Balance Sheet Engine --------------------------------
+        if st_liab is not None and lt_liab is not None:
+            dte = _safe_div(st_liab + lt_liab, equity_latest)
             if dte is not None:
-                fields["debt_to_equity"] = round(dte, 2)
+                out["debt_to_equity"] = round(dte, 2)
 
-        # F/K = fiyat / yıllıklandırılmış hisse başı kazanç
-        # (fields["_price"] Round 2'de candidate içine ayrıca eklenecek)
-        fields["_eps_annualized"] = eps_annualized
-        fields["_net_income_annualized"] = net_income_annualized
-        fields["_equity_latest"] = equity_latest
+        if st_fin_debt is not None or lt_fin_debt is not None:
+            gross_debt = (st_fin_debt or 0) + (lt_fin_debt or 0)
+            net_debt = gross_debt - (cash or 0)
+            nd_e = _safe_div(net_debt, equity_latest)
+            if nd_e is not None:
+                out["net_debt_to_equity"] = round(nd_e, 2)
+
+            # Deleveraging: net borç/özkaynak bir yıl öncesine göre düşüyor mu?
+            prev_st, prev_lt, prev_cash, prev_eq = None, None, None, None
+            _, prev_st, _ = _latest_and_prior_year(df, ITEM_ST_FIN_DEBT, quarter_cols)
+            _, prev_lt, _ = _latest_and_prior_year(df, ITEM_LT_FIN_DEBT, quarter_cols)
+            _, prev_cash, _ = _latest_and_prior_year(df, ITEM_CASH, quarter_cols)
+            _, prev_eq, _ = _latest_and_prior_year(df, ITEM_PARENT_EQUITY, quarter_cols)
+            if prev_eq and prev_eq > 0:
+                prev_net_debt = (prev_st or 0) + (prev_lt or 0) - (prev_cash or 0)
+                prev_nd_e = prev_net_debt / prev_eq
+                if nd_e is not None:
+                    out["deleveraging"] = round(prev_nd_e - nd_e, 2)  # pozitif = borç azalıyor
+
+        # --- Bölüm 15: Earnings Quality (CFO / Net Kâr) --------------------
+        if cfo_latest is not None and net_income_latest and net_income_latest > 0:
+            out["cfo_to_net_income"] = round(cfo_latest / net_income_latest, 2)
 
     except Exception as e:
         print(f"  {ticker}: oran hesaplanırken hata ({e}), mevcut alanlarla devam")
 
-    return fields
-DATA_BLOCK_TEMPLATE = """ŞİRKET: {name} ({ticker})
-Sektör: {sector} / {industry}
+    return out
+
+
+# --- Bilanço önbelleği ------------------------------------------------------
+def load_fin_cache():
+    if os.path.exists(FIN_CACHE_FILE):
+        try:
+            with open(FIN_CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_fin_cache(cache):
+    try:
+        with open(FIN_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"Önbellek yazılamadı: {e}")
+
+
+def get_fundamentals_cached(ticker, cache):
+    """Önbellekte taze (CACHE_MAX_AGE_DAYS'ten yeni) kayıt varsa onu kullanır,
+    yoksa İş Yatırım'dan çeker ve önbelleğe yazar.
+    Bilançolar çeyrekte bir değiştiği için bu, her gün 720 şirketin
+    bilançosunu yeniden çekmeyi (saatler) gereksiz kılıyor."""
+    today = datetime.now(TR_TZ).date()
+    entry = cache.get(ticker)
+    if entry and entry.get("fetched_at"):
+        try:
+            fetched = datetime.strptime(entry["fetched_at"], "%Y-%m-%d").date()
+            if (today - fetched).days < CACHE_MAX_AGE_DAYS:
+                return entry["data"], False   # False = ağdan çekilmedi
+        except Exception:
+            pass
+
+    data = compute_fundamentals(ticker)
+    cache[ticker] = {"fetched_at": today.strftime("%Y-%m-%d"), "data": data}
+    return data, True
+
+
+def fetch_fundamentals_isyatirim(ticker):
+    """Geriye dönük uyumluluk için ince sarmalayıcı (Round 2 hâlâ bunu
+    çağırabiliyor). Round 1 artık get_fundamentals_cached kullanıyor."""
+    return compute_fundamentals(ticker)
+
+
+DATA_BLOCK_TEMPLATE = """ŞİRKET: {name} ({ticker}){liquidity_note}
 Güncel Fiyat: {price} TL
-Piyasa Değeri: {market_cap}
+
+--- DEĞERLEME ---
 Trailing F/K: {trailing_pe}
-Forward F/K: {forward_pe}
 PD/DD: {price_to_book}
 ROE: {roe}
-Ciro Büyümesi (YoY): {revenue_growth}
-Kâr Büyümesi (YoY): {earnings_growth}
+
+--- FINANCIAL MOMENTUM (yıl-başından-bugüne, YoY) ---
+Ciro Büyümesi: {revenue_growth}
+Net Kâr Büyümesi: {earnings_growth}
+
+--- EARNINGS ACCELERATION (çeyreklik YoY büyümenin değişimi) ---
+Ciro Büyümesi İvmesi: {revenue_acceleration}
+Kâr Büyümesi İvmesi: {earnings_acceleration}
+(pozitif = büyüme hızlanıyor, negatif = yavaşlıyor)
+
+--- MARJ TRENDİ (geçen yılın aynı çeyreğine göre değişim) ---
+Brüt Marj Değişimi: {gross_margin_trend}
+Faaliyet Marjı Değişimi: {operating_margin_trend}
+
+--- BİLANÇO ---
 Borç/Özsermaye: {debt_to_equity}
-Temettü Verimi: {dividend_yield}"""
+Net Finansal Borç/Özsermaye: {net_debt_to_equity}
+Deleveraging (yıllık net borç/özkaynak azalışı): {deleveraging}
+(pozitif = borçluluk azalıyor)
+
+--- KÂR KALİTESİ ---
+İşletme Nakit Akışı / Net Kâr: {cfo_to_net_income}
+(1'in altı veya negatif = kâr nakde dönüşmüyor, uyarı işareti)
+
+--- FİYAT TEPKİSİ (Fundamental-Price Divergence için) ---
+5 Günlük Getiri: {return_5d}
+20 Günlük Getiri: {return_20d}
+60 Günlük Getiri: {return_60d}
+
+--- ROUND 1 TARAMA SKORLARI (0-1 arası, BIST evrenine göre yüzdelik dilim) ---
+Değerleme: {score_valuation} | Momentum: {score_momentum} | İvmelenme: {score_acceleration}
+Marj: {score_margin} | Bilanço: {score_balance} | Divergence: {score_divergence}
+Veri Tamlığı: {data_completeness}"""
 
 BEAR_PROMPT_TEMPLATE = """
 Sen bir BIST Ayı (Bear) Analistisin. Görevin SADECE şu şirketteki riskleri,
-"Value Trap" (değer tuzağı) olasılığını, borç/kârlılık sorunlarını ve en
-kötü senaryoyu olabildiğince güçlü savunmak. Şirketin olumlu yanlarını bu
-analizde ELE ALMA — görevin kötümser tarafı zorlamak. Bilmediğin/verilmeyen
-bilgiyi UYDURMA, eksikse "N/A" say.
+"Value Trap" (değer tuzağı) olasılığını, borç/kârlılık/kâr kalitesi
+sorunlarını ve en kötü senaryoyu olabildiğince güçlü savunmak. Şirketin
+olumlu yanlarını bu analizde ELE ALMA — görevin kötümser tarafı zorlamak.
+
+Özellikle şunlara dikkat et: büyümede yavaşlama (negatif ivmelenme), marj
+daralması, artan borçluluk, işletme nakit akışının net kârın gerisinde
+kalması (kâr kalitesi sorunu), düşük likidite ve döngüsel zirve kârı
+olasılığı.
+
+Bilmediğin/verilmeyen bilgiyi UYDURMA, "N/A" ise o konuda yorum yapma.
 
 {data_block}
 
@@ -448,7 +881,14 @@ BULL_PROMPT_TEMPLATE = """
 Sen bir BIST Boğa (Bull) Analistisin. Görevin SADECE şu şirketin büyüme
 potansiyelini, olası katalizörlerini ve en iyi senaryoyu olabildiğince güçlü
 savunmak. Şirketin risklerini bu analizde ELE ALMA — görevin iyimser tarafı
-zorlamak. Bilmediğin/verilmeyen bilgiyi UYDURMA, eksikse "N/A" say.
+zorlamak.
+
+Özellikle şunlara dikkat et: büyümede hızlanma (pozitif ivmelenme), marj
+genişlemesi, borç azalması (deleveraging), güçlü kâr kalitesi ve
+"temeller güçlü ama fiyat henüz tepki vermemiş" durumu (yani yüksek
+divergence skoru = piyasa bu iyileşmeyi henüz fiyatlamamış olabilir).
+
+Bilmediğin/verilmeyen bilgiyi UYDURMA, "N/A" ise o konuda yorum yapma.
 
 {data_block}
 
@@ -619,18 +1059,57 @@ def _finalize_price_based_ratios(fundamentals, price, ticker):
     return fundamentals
 
 
+def _fmt_for_prompt(value, as_pct=False):
+    """Prompt'a gidecek değerleri okunur hale getirir; eksikse N/A yazar."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "N/A"
+    if isinstance(value, (int, float)):
+        if as_pct:
+            return f"%{value * 100:.2f}"
+        return f"{value:.2f}"
+    return str(value)
+
+
+def _build_candidate_for_agents(row):
+    """Round 1'de zaten hesaplanmış veriden ajanlar için prompt sözlüğü üretir.
+    Round 2 artık veriyi YENİDEN ÇEKMİYOR — Round 1'de toplanan veriyi kullanıyor."""
+    pct_fields = {
+        "revenue_growth", "earnings_growth", "revenue_acceleration",
+        "earnings_acceleration", "gross_margin_trend", "operating_margin_trend",
+        "roe", "return_5d", "return_20d", "return_60d",
+    }
+    plain_fields = {
+        "trailing_pe", "price_to_book", "debt_to_equity", "net_debt_to_equity",
+        "deleveraging", "cfo_to_net_income", "score_valuation", "score_momentum",
+        "score_acceleration", "score_margin", "score_balance", "score_divergence",
+        "data_completeness",
+    }
+
+    out = {
+        "ticker": row["ticker"],
+        "name": row.get("name") or row["ticker"],
+        "price": round(float(row["price"]), 2),
+        "liquidity_note": "  [UYARI: DÜŞÜK LİKİDİTE — işlem hacmi sığ]" if row.get("low_liquidity_flag") else "",
+    }
+    for f in pct_fields:
+        out[f] = _fmt_for_prompt(row.get(f), as_pct=True)
+    for f in plain_fields:
+        out[f] = _fmt_for_prompt(row.get(f))
+    return out
+
+
 def round2_deep_analysis(candidates_df):
     results = []
     records = candidates_df.to_dict("records")
     for i, row in enumerate(records, 1):
         ticker = row["ticker"]
-        price = row["price"]
         print(f"  Derin analiz {i}/{len(records)}: {ticker} (Bear -> Bull -> CRO)")
-        fundamentals = fetch_fundamentals_isyatirim(ticker)
-        fundamentals = _finalize_price_based_ratios(fundamentals, price, ticker)
-        candidate = {**fundamentals, "ticker": ticker, "price": price}
+        candidate = _build_candidate_for_agents(row)
         result = analyze_with_gemini(candidate)
         if result:
+            # Round 1'den gelen sayısal verileri de sakla (rapor/hafıza için)
+            result["low_liquidity_flag"] = bool(row.get("low_liquidity_flag"))
+            result["screening_score"] = round(float(row.get("screening_score", 0)), 1)
             results.append(result)
         time.sleep(SLEEP_BETWEEN_GEMINI_CALLS)
     return results
@@ -708,8 +1187,11 @@ def build_report(ranked, previous_ranking, total_scanned, deep_count):
         medal = medals[i] if i < 3 else ""
         prev = prev_map.get(item["ticker"])
         prev_rank_str = f"#{prev['rank']}" if prev else "Yeni"
-        lines.append(f"{medal} {i+1}. {item['ticker']} — {item.get('name','')}")
+        liq = " ⚠️ DÜŞÜK LİKİDİTE" if item.get("low_liquidity_flag") else ""
+        lines.append(f"{medal} {i+1}. {item['ticker']} — {item.get('name','')}{liq}")
         lines.append(f"Alpha Score: {item.get('alpha_score','N/A')}/100  |  Data Confidence: {item.get('data_confidence','N/A')}/100")
+        if item.get("screening_score") is not None:
+            lines.append(f"Round 1 Tarama Skoru: {item.get('screening_score')}/100")
         lines.append(f"Fiyat: {fmt(item.get('price'))} TL")
         lines.append(f"Bear FV: {fmt(item.get('bear_fv'))} | Base FV: {fmt(item.get('base_fv'))} | Bull FV: {fmt(item.get('bull_fv'))}")
         try:
@@ -737,8 +1219,9 @@ def build_report(ranked, previous_ranking, total_scanned, deep_count):
             delta = f"(+{d})" if d > 0 else (f"({d})" if d < 0 else "(=)")
         else:
             delta = "(YENİ)"
+        liq = " ⚠️" if item.get("low_liquidity_flag") else ""
         lines.append(
-            f"{i}. {item['ticker']} | Alpha {item.get('alpha_score','N/A')} | "
+            f"{i}. {item['ticker']}{liq} | Alpha {item.get('alpha_score','N/A')} | "
             f"Fiyat {fmt(item.get('price'))} | Base FV {fmt(item.get('base_fv'))} | {delta}"
         )
     lines.append("")
