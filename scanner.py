@@ -136,6 +136,7 @@ CACHE_SAVE_EVERY = 25              # her N şirkette bir önbelleği diske yaz (
 # alıyoruz ama çok daha uzun süre taze sayıyoruz (rapor zaten aylarca aynı).
 REPORT_CACHE_FILE = os.path.join(os.path.dirname(__file__), "report_excerpts_cache.json")
 REPORT_CACHE_MAX_AGE_DAYS = 60
+REPORT_NOT_FOUND_RETRY_DAYS = 3     # "rapor bulunamadı" sonucu çok daha kısa süre önbelleklenir
 REPORT_MAX_EXCERPT_CHARS = 6000     # ajanlara giden özet metnin karakter sınırı
 REPORT_MAX_PDF_CHARS_TO_SCAN = 400_000   # PDF'ten okunacak maksimum karakter (çok büyük dosyalarda zaman aşımını önler)
 
@@ -928,13 +929,16 @@ def _find_latest_far_pdf_bytes(ticker):
 
     try:
         comp = pykap.BISTCompany(ticker)
+        print(f"  [RAG-DEBUG {ticker}] company_id={comp.company_id}")
         reports = comp.get_disclosures("FAR")
+        print(f"  [RAG-DEBUG {ticker}] get_disclosures('FAR') -> {len(reports) if reports else 0} kayıt")
         if not reports:
             return None, None
 
         reports_sorted = sorted(reports, key=lambda r: r.get("publishDate", ""), reverse=True)
         latest = reports_sorted[0]
         disc_index = latest.get("disclosureIndex")
+        print(f"  [RAG-DEBUG {ticker}] en güncel rapor: disclosureIndex={disc_index}, publishDate={latest.get('publishDate')}")
         if not disc_index:
             return None, None
 
@@ -945,12 +949,14 @@ def _find_latest_far_pdf_bytes(ticker):
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(resp.text, "html5lib")
         pdf_link_tag = soup.select("a.modal-attachment.type-xsmall.bi-sky-black.maximize")
+        print(f"  [RAG-DEBUG {ticker}] PDF link bulundu mu: {bool(pdf_link_tag)}")
         if not pdf_link_tag or not pdf_link_tag[0].get("href"):
             return None, latest
 
         pdf_url = "https://www.kap.org.tr" + pdf_link_tag[0]["href"]
         pdf_resp = requests.get(pdf_url, timeout=60)
         content_type = pdf_resp.headers.get("Content-Type", "").lower()
+        print(f"  [RAG-DEBUG {ticker}] PDF indirme: status={pdf_resp.status_code}, content-type={content_type}, boyut={len(pdf_resp.content)} byte")
         if pdf_resp.status_code == 200 and "pdf" in content_type:
             return pdf_resp.content, latest
         return None, latest
@@ -1034,16 +1040,23 @@ def save_report_cache(cache):
 
 
 def get_report_excerpt_cached(ticker, cache):
-    """Önbellekte taze (REPORT_CACHE_MAX_AGE_DAYS'ten yeni) bir alıntı varsa
-    onu döner, yoksa KAP'tan yeni faaliyet raporunu çeker, anahtar kelime
-    filtrelemesi yapar ve önbelleğe yazar. Rapor bulunamazsa None döner —
-    bu durumda Bull/Bear ajanları bu bölümü N/A olarak görür, uydurmaz."""
+    """Önbellekte taze bir alıntı varsa onu döner, yoksa KAP'tan yeni
+    faaliyet raporunu çeker, anahtar kelime filtrelemesi yapar ve önbelleğe
+    yazar. Rapor bulunamazsa None döner — bu durumda Bull/Bear ajanları bu
+    bölümü N/A olarak görür, uydurmaz.
+
+    Not: Başarılı sonuçlar REPORT_CACHE_MAX_AGE_DAYS (60 gün) önbelleklenir,
+    ama 'bulunamadı' sonuçları sadece REPORT_NOT_FOUND_RETRY_DAYS (3 gün)
+    önbelleklenir — bu, geçici bir hata/bug varsa sistemin uzun süre
+    "poison" olmasını engelliyor, gerçek RAG hit-rate'i hâlâ öğreniyoruz."""
     today = datetime.now(TR_TZ).date()
     entry = cache.get(ticker)
     if entry and entry.get("fetched_at"):
         try:
             fetched = datetime.strptime(entry["fetched_at"], "%Y-%m-%d").date()
-            if (today - fetched).days < REPORT_CACHE_MAX_AGE_DAYS:
+            age_days = (today - fetched).days
+            max_age = REPORT_CACHE_MAX_AGE_DAYS if entry.get("excerpt") else REPORT_NOT_FOUND_RETRY_DAYS
+            if age_days < max_age:
                 return entry.get("excerpt"), entry.get("report_period")
         except Exception:
             pass
