@@ -3,3 +3,7 @@ pandas==2.2.3
 openpyxl==3.1.5
 isyatirimhisse==5.0.1
 google-genai==1.2.0
+pykap==0.2.0
+pypdf==5.9.0
+beautifulsoup4==4.12.3
+html5lib==1.1
