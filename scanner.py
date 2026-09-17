@@ -1187,7 +1187,34 @@ def load_previous_state():
 
 
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
-HISTORY_MAX_DAYS = 10   # geçmişte en fazla kaç günlük kayıt tutulsun
+HISTORY_MAX_DAYS = 20   # Faz 4 (thesis tracking) için birkaç haftalık hafıza tutuyoruz
+
+
+def load_full_history():
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+
+def build_last_seen_map(history, exclude_date):
+    """Her hisse için, bugün (exclude_date) HARİÇ en son hangi günde görüldüğünü
+    ve o günkü tam tez/FV/verdict bilgisini bulur. Faz 4 (Thesis Tracking):
+    'bu hissenin tezi son gördüğümüzden beri nasıl değişti' sorusunun temeli."""
+    last_seen = {}
+    for entry in sorted(history, key=lambda h: h.get("date", "")):
+        date = entry.get("date")
+        if date == exclude_date:
+            continue
+        for item in entry.get("ranking", []):
+            tk = item.get("ticker")
+            if not tk:
+                continue
+            last_seen[tk] = {**item, "date": date}   # kronolojik sırayla üzerine yazılır, sonuçta en yenisi kalır
+    return last_seen
 
 
 def save_state(ranking):
@@ -1196,15 +1223,9 @@ def save_state(ranking):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
-    # Faz 2 (haftalık özet) için günlük geçmişi de biriktiriyoruz
-    history = []
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                history = json.load(f)
-        except Exception:
-            history = []
-
+    # Faz 2 (haftalık özet) + Faz 4 (thesis tracking) için günlük geçmişi
+    # biriktiriyoruz
+    history = load_full_history()
     history = [h for h in history if h.get("date") != today_str]  # aynı gün varsa üzerine yaz
     history.append(state)
     history = history[-HISTORY_MAX_DAYS:]  # sadece son N günü tut
@@ -1225,9 +1246,9 @@ def fmt(v, suffix=""):
         return str(v)
 
 
-def build_report(ranked, previous_ranking, total_scanned, deep_count):
+def build_report(ranked, last_seen_map, total_scanned, deep_count):
     today = datetime.now(TR_TZ).strftime("%d.%m.%Y")
-    prev_map = {r["ticker"]: r for r in previous_ranking}
+    prev_map = last_seen_map   # geriye dönük isim uyumu için
 
     lines = []
     lines.append("📊 BIST FUNDAMENTAL ALPHA — GÜNLÜK TARAMA")
@@ -1247,7 +1268,7 @@ def build_report(ranked, previous_ranking, total_scanned, deep_count):
     for i, item in enumerate(top10[:3]):
         medal = medals[i] if i < 3 else ""
         prev = prev_map.get(item["ticker"])
-        prev_rank_str = f"#{prev['rank']}" if prev else "Yeni"
+        prev_rank_str = f"#{prev['rank']} ({prev['date']})" if prev else "Yeni"
         liq = " ⚠️ DÜŞÜK LİKİDİTE" if item.get("low_liquidity_flag") else ""
         cap = f" [{item.get('cap_bucket')}]" if item.get("cap_bucket") else ""
         lines.append(f"{medal} {i+1}. {item['ticker']} — {item.get('name','')}{cap}{liq}")
@@ -1262,6 +1283,32 @@ def build_report(ranked, previous_ranking, total_scanned, deep_count):
         except Exception:
             lines.append("Base Upside: N/A")
         lines.append(f"Önceki Sıra: {prev_rank_str}")
+
+        # --- Faz 4: Thesis Tracking ----------------------------------------
+        # Bu hisse daha önce (herhangi bir günde) taranmışsa, o zamanki
+        # Base FV ve Verdict ile bugünküyle karşılaştırıp neyin değiştiğini
+        # gösteriyoruz.
+        if prev and prev.get("base_fv") is not None:
+            try:
+                old_fv = float(prev["base_fv"])
+                new_fv = float(item.get("base_fv"))
+                fv_change_pct = (new_fv / old_fv - 1) * 100 if old_fv else None
+            except (TypeError, ValueError):
+                fv_change_pct = None
+
+            old_verdict = prev.get("verdict", "N/A")
+            new_verdict = item.get("verdict", "N/A")
+
+            change_bits = []
+            if fv_change_pct is not None:
+                arrow = "📈" if fv_change_pct > 0 else ("📉" if fv_change_pct < 0 else "➡️")
+                change_bits.append(f"Base FV {fmt(prev['base_fv'])} → {fmt(item.get('base_fv'))} ({arrow} %{fv_change_pct:+.1f})")
+            if old_verdict != new_verdict:
+                change_bits.append(f"Verdict {old_verdict} → {new_verdict}")
+
+            if change_bits:
+                lines.append(f"📜 Tez Değişimi ({prev['date']}'den beri): " + "; ".join(change_bits))
+
         lines.append(f"Tez: {item.get('thesis_summary','N/A')}")
         cats = item.get("catalysts") or []
         if cats:
@@ -1357,18 +1404,31 @@ def main():
     for i, item in enumerate(ranked, 1):
         item["rank"] = i
 
-    prev_state = load_previous_state()
+    today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
+    full_history = load_full_history()
+    last_seen_map = build_last_seen_map(full_history, exclude_date=today_str)
 
     report = build_report(
         ranked,
-        prev_state.get("ranking", []),
+        last_seen_map,
         total_scanned=len(tickers),
         deep_count=len(candidates_df),
     )
     print(report)
     send_telegram_message(report)
 
-    save_state([{"ticker": r["ticker"], "rank": r["rank"], "alpha_score": r.get("alpha_score")} for r in ranked[:15]])
+    # Faz 4 (Thesis Tracking) için zenginleştirilmiş kayıt: artık sadece
+    # sıra/skor değil, Base/Bear/Bull FV ve Verdict de saklanıyor ki
+    # ileride "bu hissenin tezi nasıl değişti" karşılaştırması yapılabilsin.
+    save_state([
+        {
+            "ticker": r["ticker"], "rank": r["rank"],
+            "alpha_score": r.get("alpha_score"),
+            "bear_fv": r.get("bear_fv"), "base_fv": r.get("base_fv"), "bull_fv": r.get("bull_fv"),
+            "verdict": r.get("verdict"),
+        }
+        for r in ranked[:15]
+    ])
     print("Tamamlandı.")
 
 
