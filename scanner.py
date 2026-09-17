@@ -61,6 +61,14 @@ from isyatirimhisse import fetch_financials as isy_fetch_financials
 from google import genai
 from google.genai import types
 
+# Faz 5 (RAG): faaliyet raporu PDF'lerini KAP'tan çekmek için
+try:
+    import pykap
+    from pypdf import PdfReader
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+
 # --------------------------------------------------------------------------
 # CONFIG
 # --------------------------------------------------------------------------
@@ -122,6 +130,23 @@ ITEM_DEPRECIATION = "4B"           # Amortisman Giderleri
 FIN_CACHE_FILE = os.path.join(os.path.dirname(__file__), "financials_cache.json")
 CACHE_MAX_AGE_DAYS = 7
 CACHE_SAVE_EVERY = 25              # her N şirkette bir önbelleği diske yaz (kesinti olursa ilerleme kaybolmasın)
+
+# --- Faz 5: RAG (Faaliyet Raporu Analizi) ----------------------------------
+# Faaliyet raporları çeyrekte bir yayınlanır, bilanço gibi bunu da önbelleğe
+# alıyoruz ama çok daha uzun süre taze sayıyoruz (rapor zaten aylarca aynı).
+REPORT_CACHE_FILE = os.path.join(os.path.dirname(__file__), "report_excerpts_cache.json")
+REPORT_CACHE_MAX_AGE_DAYS = 60
+REPORT_MAX_EXCERPT_CHARS = 6000     # ajanlara giden özet metnin karakter sınırı
+REPORT_MAX_PDF_CHARS_TO_SCAN = 400_000   # PDF'ten okunacak maksimum karakter (çok büyük dosyalarda zaman aşımını önler)
+
+# Yönetim beklentisi/guidance, CAPEX ve sipariş backlog'u gibi nitel
+# sinyalleri içeren paragrafları PDF'ten "arayıp bulmak" için kullanılan
+# anahtar kelimeler (basit, embedding'siz bir retrieval).
+REPORT_KEYWORDS = [
+    "beklenti", "hedef", "öngör", "yatırım", "capex", "yatırım harcaması",
+    "sipariş", "backlog", "kapasite", "genişleme", "büyüme stratejisi",
+    "yeni tesis", "yeni fabrika", "pazar payı", "ihracat", "talep",
+]
 
 # --- Round 1 tarama skoru ağırlıkları --------------------------------------
 # Orijinal sistemin 25. bölümündeki Alpha Score ağırlıklarının, LLM'siz
@@ -743,9 +768,13 @@ def compute_fundamentals(ticker):
 
         # --- Bölüm 13: Financial Momentum (YoY, kümülatif bazda) ------------
         if revenue_latest is not None and revenue_prior and revenue_prior > 0:
-            out["revenue_growth"] = round((revenue_latest / revenue_prior) - 1, 4)
+            g = (revenue_latest / revenue_prior) - 1
+            if -3.0 <= g <= 20.0:
+                out["revenue_growth"] = round(g, 4)
         if net_income_latest is not None and net_income_prior and net_income_prior > 0:
-            out["earnings_growth"] = round((net_income_latest / net_income_prior) - 1, 4)
+            g = (net_income_latest / net_income_prior) - 1
+            if -3.0 <= g <= 20.0:
+                out["earnings_growth"] = round(g, 4)
 
         # --- Bölüm 14: Earnings Acceleration (çeyreklik bazda) --------------
         rev_series = _series_for_item(df, ITEM_REVENUE, quarter_cols)
@@ -763,14 +792,35 @@ def compute_fundamentals(ticker):
         ni_g_now = _yoy_growth_for_quarter(ni_q, 0)
         ni_g_prev = _yoy_growth_for_quarter(ni_q, 1)
 
+        # Makul aralık kelepçesi: bir çeyreğin bazı sıfıra çok yakınsa (veya
+        # işaret değiştiriyorsa) YoY büyüme oranı matematiksel olarak
+        # patlayabilir (örn. %-2527 gibi anlamsız değerler). Bunları N/A'ya
+        # çeviriyoruz — F/K ve PD/DD'de yaptığımız korumanın aynısı.
+        def _clamp_growth(v, lower=-3.0, upper=20.0):
+            if v is None or v < lower or v > upper:
+                return None
+            return v
+
+        def _clamp_accel(v, lower=-15.0, upper=15.0):
+            if v is None or v < lower or v > upper:
+                return None
+            return v
+
+        rev_g_now = _clamp_growth(rev_g_now)
+        rev_g_prev = _clamp_growth(rev_g_prev)
+        ni_g_now = _clamp_growth(ni_g_now)
+        ni_g_prev = _clamp_growth(ni_g_prev)
+
         if rev_g_now is not None:
             out["revenue_growth_prev_q"] = round(rev_g_prev, 4) if rev_g_prev is not None else None
             if rev_g_prev is not None:
-                out["revenue_acceleration"] = round(rev_g_now - rev_g_prev, 4)
+                accel = _clamp_accel(rev_g_now - rev_g_prev)
+                out["revenue_acceleration"] = round(accel, 4) if accel is not None else None
         if ni_g_now is not None:
             out["earnings_growth_prev_q"] = round(ni_g_prev, 4) if ni_g_prev is not None else None
             if ni_g_prev is not None:
-                out["earnings_acceleration"] = round(ni_g_now - ni_g_prev, 4)
+                accel = _clamp_accel(ni_g_now - ni_g_prev)
+                out["earnings_acceleration"] = round(accel, 4) if accel is not None else None
 
         # --- Marj trendi ---------------------------------------------------
         gm_trend = _margin_trend(rev_q, gp_q)
@@ -865,6 +915,158 @@ def get_fundamentals_cached(ticker, cache):
     return data, True
 
 
+# --------------------------------------------------------------------------
+# FAZ 5: RAG — FAALİYET RAPORU ANALİZİ
+# --------------------------------------------------------------------------
+def _find_latest_far_pdf_bytes(ticker):
+    """KAP'tan bir şirketin en güncel Faaliyet Raporu PDF'ini bulur ve
+    indirir. pykap kütüphanesinin BISTCompany sınıfını kullanır. Herhangi bir
+    adımda hata olursa (rapor yok, PDF linki bulunamadı, ağ hatası vb.)
+    sessizce None döner — bu modül olmadan da sistem çalışmaya devam eder."""
+    if not RAG_AVAILABLE:
+        return None, None
+
+    try:
+        comp = pykap.BISTCompany(ticker)
+        reports = comp.get_disclosures("FAR")
+        if not reports:
+            return None, None
+
+        reports_sorted = sorted(reports, key=lambda r: r.get("publishDate", ""), reverse=True)
+        latest = reports_sorted[0]
+        disc_index = latest.get("disclosureIndex")
+        if not disc_index:
+            return None, None
+
+        announcement_url = f"https://www.kap.org.tr/tr/Bildirim/{disc_index}"
+        resp = requests.get(announcement_url, timeout=30)
+        resp.raise_for_status()
+
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(resp.text, "html5lib")
+        pdf_link_tag = soup.select("a.modal-attachment.type-xsmall.bi-sky-black.maximize")
+        if not pdf_link_tag or not pdf_link_tag[0].get("href"):
+            return None, latest
+
+        pdf_url = "https://www.kap.org.tr" + pdf_link_tag[0]["href"]
+        pdf_resp = requests.get(pdf_url, timeout=60)
+        content_type = pdf_resp.headers.get("Content-Type", "").lower()
+        if pdf_resp.status_code == 200 and "pdf" in content_type:
+            return pdf_resp.content, latest
+        return None, latest
+    except Exception as e:
+        print(f"  {ticker}: faaliyet raporu PDF'i bulunamadı/indirilemedi ({e})")
+        return None, None
+
+
+def _extract_pdf_text(pdf_bytes):
+    """PDF byte içeriğinden düz metin çıkarır. Taranmış (image-only) PDF'lerde
+    ya da bozuk dosyalarda boş/kısmi metin dönebilir — bu normaldir, hata
+    fırlatmaz."""
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        chunks = []
+        total_chars = 0
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            chunks.append(text)
+            total_chars += len(text)
+            if total_chars >= REPORT_MAX_PDF_CHARS_TO_SCAN:
+                break
+        return "\n".join(chunks)
+    except Exception as e:
+        print(f"  PDF metni çıkarılamadı: {e}")
+        return ""
+
+
+def _extract_keyword_excerpt(full_text):
+    """Basit, embedding'siz bir 'retrieval': REPORT_KEYWORDS'ten en az birini
+    içeren paragrafları toplayıp REPORT_MAX_EXCERPT_CHARS'a kadar birleştirir.
+    Gerçek bir vektör DB değil ama tek bir belge için (aynı şirketin kendi
+    raporu) pratikte aynı işi görüyor: yönetim beklentisi/CAPEX/sipariş gibi
+    nitel sinyalleri içeren bölümleri buluyor."""
+    if not full_text:
+        return None
+
+    # Paragrafları basit şekilde ayır (boş satırlar, ya da uzun tek bloklarda
+    # cümle bazlı ayır)
+    raw_paragraphs = re.split(r"\n\s*\n", full_text)
+    if len(raw_paragraphs) < 5:
+        raw_paragraphs = re.split(r"(?<=[.!?])\s+", full_text)
+
+    keywords_lower = [k.lower() for k in REPORT_KEYWORDS]
+    matched = []
+    seen = set()
+    for para in raw_paragraphs:
+        para = para.strip()
+        if len(para) < 30 or para in seen:
+            continue
+        low = para.lower()
+        if any(kw in low for kw in keywords_lower):
+            matched.append(para)
+            seen.add(para)
+
+    if not matched:
+        return None
+
+    excerpt = "\n---\n".join(matched)
+    if len(excerpt) > REPORT_MAX_EXCERPT_CHARS:
+        excerpt = excerpt[:REPORT_MAX_EXCERPT_CHARS] + "…"
+    return excerpt
+
+
+def load_report_cache():
+    if os.path.exists(REPORT_CACHE_FILE):
+        try:
+            with open(REPORT_CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_report_cache(cache):
+    try:
+        with open(REPORT_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"Rapor önbelleği yazılamadı: {e}")
+
+
+def get_report_excerpt_cached(ticker, cache):
+    """Önbellekte taze (REPORT_CACHE_MAX_AGE_DAYS'ten yeni) bir alıntı varsa
+    onu döner, yoksa KAP'tan yeni faaliyet raporunu çeker, anahtar kelime
+    filtrelemesi yapar ve önbelleğe yazar. Rapor bulunamazsa None döner —
+    bu durumda Bull/Bear ajanları bu bölümü N/A olarak görür, uydurmaz."""
+    today = datetime.now(TR_TZ).date()
+    entry = cache.get(ticker)
+    if entry and entry.get("fetched_at"):
+        try:
+            fetched = datetime.strptime(entry["fetched_at"], "%Y-%m-%d").date()
+            if (today - fetched).days < REPORT_CACHE_MAX_AGE_DAYS:
+                return entry.get("excerpt"), entry.get("report_period")
+        except Exception:
+            pass
+
+    if not RAG_AVAILABLE:
+        return None, None
+
+    pdf_bytes, meta = _find_latest_far_pdf_bytes(ticker)
+    excerpt, period = None, None
+    if pdf_bytes:
+        full_text = _extract_pdf_text(pdf_bytes)
+        excerpt = _extract_keyword_excerpt(full_text)
+        if meta:
+            period = f"{meta.get('year', '')} {meta.get('period', '')}".strip()
+
+    cache[ticker] = {
+        "fetched_at": today.strftime("%Y-%m-%d"),
+        "excerpt": excerpt,
+        "report_period": period,
+    }
+    return excerpt, period
+
+
 def fetch_fundamentals_isyatirim(ticker):
     """Geriye dönük uyumluluk için ince sarmalayıcı (Round 2 hâlâ bunu
     çağırabiliyor). Round 1 artık get_fundamentals_cached kullanıyor."""
@@ -911,7 +1113,13 @@ Deleveraging (yıllık net borç/özkaynak azalışı): {deleveraging}
 --- ROUND 1 TARAMA SKORLARI (0-1 arası, BIST evrenine göre yüzdelik dilim) ---
 Değerleme: {score_valuation} | Momentum: {score_momentum} | İvmelenme: {score_acceleration}
 Marj: {score_margin} | Bilanço: {score_balance} | Divergence: {score_divergence}
-Veri Tamlığı: {data_completeness}"""
+Veri Tamlığı: {data_completeness}
+
+--- FAALİYET RAPORUNDAN ÖNE ÇIKAN BÖLÜMLER (varsa, {report_period}) ---
+(Yönetim beklentisi, CAPEX/yatırım, sipariş/backlog, kapasite gibi anahtar
+kelimeleri içeren paragraflar — rapor yoksa veya bu bölümler bulunamadıysa
+N/A yazar, bu durumda bu kısımla ilgili UYDURMA YAPMA.)
+{report_excerpt}"""
 
 BEAR_PROMPT_TEMPLATE = """
 Sen bir BIST Ayı (Bear) Analistisin. Görevin SADECE şu şirketteki riskleri,
@@ -922,7 +1130,9 @@ olumlu yanlarını bu analizde ELE ALMA — görevin kötümser tarafı zorlamak
 Özellikle şunlara dikkat et: büyümede yavaşlama (negatif ivmelenme), marj
 daralması, artan borçluluk, işletme nakit akışının net kârın gerisinde
 kalması (kâr kalitesi sorunu), düşük likidite ve döngüsel zirve kârı
-olasılığı.
+olasılığı. Faaliyet raporundan alıntılar varsa (guidance, CAPEX, sipariş
+bilgisi), bunlarda da riskli/belirsiz ifadeleri (örn. "zorlu piyasa
+koşulları", "belirsizlik") yakalamaya çalış.
 
 Bilmediğin/verilmeyen bilgiyi UYDURMA, "N/A" ise o konuda yorum yapma.
 
@@ -947,6 +1157,9 @@ zorlamak.
 genişlemesi, borç azalması (deleveraging), güçlü kâr kalitesi ve
 "temeller güçlü ama fiyat henüz tepki vermemiş" durumu (yani yüksek
 divergence skoru = piyasa bu iyileşmeyi henüz fiyatlamamış olabilir).
+Faaliyet raporundan alıntılar varsa, yönetimin büyüme hedeflerini, yeni
+yatırım/kapasite planlarını veya sipariş/backlog bilgilerini katalizör
+olarak kullanabilirsin.
 
 Bilmediğin/verilmeyen bilgiyi UYDURMA, "N/A" ise o konuda yorum yapma.
 
@@ -1130,9 +1343,11 @@ def _fmt_for_prompt(value, as_pct=False):
     return str(value)
 
 
-def _build_candidate_for_agents(row):
+def _build_candidate_for_agents(row, report_excerpt=None, report_period=None):
     """Round 1'de zaten hesaplanmış veriden ajanlar için prompt sözlüğü üretir.
-    Round 2 artık veriyi YENİDEN ÇEKMİYOR — Round 1'de toplanan veriyi kullanıyor."""
+    Round 2 artık fundamental veriyi YENİDEN ÇEKMİYOR — Round 1'de toplanan
+    veriyi kullanıyor. report_excerpt/report_period ise Faz 5 (RAG) tarafından
+    ayrıca (bilanço dışı, KAP faaliyet raporundan) sağlanıyor."""
     pct_fields = {
         "revenue_growth", "earnings_growth", "revenue_acceleration",
         "earnings_acceleration", "gross_margin_trend", "operating_margin_trend",
@@ -1150,6 +1365,8 @@ def _build_candidate_for_agents(row):
         "name": row.get("name") or row["ticker"],
         "price": round(float(row["price"]), 2),
         "liquidity_note": "  [UYARI: DÜŞÜK LİKİDİTE — işlem hacmi sığ]" if row.get("low_liquidity_flag") else "",
+        "report_excerpt": report_excerpt if report_excerpt else "N/A",
+        "report_period": report_period if report_period else "bilinmiyor",
     }
     for f in pct_fields:
         out[f] = _fmt_for_prompt(row.get(f), as_pct=True)
@@ -1161,18 +1378,31 @@ def _build_candidate_for_agents(row):
 def round2_deep_analysis(candidates_df):
     results = []
     records = candidates_df.to_dict("records")
+    report_cache = load_report_cache()
+    report_fetched_count = 0
+
     for i, row in enumerate(records, 1):
         ticker = row["ticker"]
         print(f"  Derin analiz {i}/{len(records)}: {ticker} (Bear -> Bull -> CRO)")
-        candidate = _build_candidate_for_agents(row)
+
+        report_excerpt, report_period = get_report_excerpt_cached(ticker, report_cache)
+        report_fetched_count += 1
+        if report_fetched_count % 5 == 0:
+            save_report_cache(report_cache)   # kesinti olursa ilerleme kaybolmasın
+        time.sleep(1.0)   # KAP'a da nazik davranalım
+
+        candidate = _build_candidate_for_agents(row, report_excerpt, report_period)
         result = analyze_with_gemini(candidate)
         if result:
             # Round 1'den gelen sayısal verileri de sakla (rapor/hafıza için)
             result["low_liquidity_flag"] = bool(row.get("low_liquidity_flag"))
             result["screening_score"] = round(float(row.get("screening_score", 0)), 1)
             result["cap_bucket"] = row.get("cap_bucket")
+            result["had_report_excerpt"] = bool(report_excerpt)
             results.append(result)
         time.sleep(SLEEP_BETWEEN_GEMINI_CALLS)
+
+    save_report_cache(report_cache)
     return results
 
 
@@ -1276,6 +1506,8 @@ def build_report(ranked, last_seen_map, total_scanned, deep_count):
         if item.get("screening_score") is not None:
             lines.append(f"Round 1 Tarama Skoru: {item.get('screening_score')}/100")
         lines.append(f"Fiyat: {fmt(item.get('price'))} TL")
+        if item.get("had_report_excerpt"):
+            lines.append("📄 Faaliyet raporu bulundu ve analize dahil edildi")
         lines.append(f"Bear FV: {fmt(item.get('bear_fv'))} | Base FV: {fmt(item.get('base_fv'))} | Bull FV: {fmt(item.get('bull_fv'))}")
         try:
             upside = (float(item.get("base_fv")) / float(item.get("price")) - 1) * 100
