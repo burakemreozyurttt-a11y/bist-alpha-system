@@ -66,8 +66,10 @@ try:
     import pykap
     from pypdf import PdfReader
     RAG_AVAILABLE = True
-except ImportError:
+except ImportError as _rag_import_error:
     RAG_AVAILABLE = False
+    print(f"[UYARI] RAG modülü (Faz 5) yüklenemedi, bu çalıştırmada devre dışı: {_rag_import_error}")
+    print("[UYARI] requirements.txt içinde pykap, pypdf, beautifulsoup4, html5lib satırlarının olduğundan emin ol.")
 
 # --------------------------------------------------------------------------
 # CONFIG
@@ -288,18 +290,58 @@ def fetch_price_snapshot(ticker):
                 "return_5d": _return_over(5),
                 "return_20d": _return_over(20),
                 "return_60d": _return_over(60),
-            }
+            }, False
         except Exception as e:
+            last_exception_was_empty_data = "Boş veri döndü" in str(e)
             if attempt < IY_MAX_RETRIES:
                 time.sleep(IY_RETRY_BACKOFF)
             else:
                 print(f"  {ticker}: fiyat verisi alınamadı ({e})")
-                return None
-    return None
+                return None, last_exception_was_empty_data
+    return None, False
 
 
 ROUND1_TIME_BUDGET_SECONDS = 5 * 3600   # Round 1 en fazla ~5 saat sürsün (18:30-10:00 arası bolca pay var)
 CONSECUTIVE_FAILURE_CIRCUIT_BREAKER = 150   # bu kadar üst üste başarısızlık = gerçek bir engelleme, dur
+
+# --- "Ölü kod" (gerçek hisse olmayan) önbelleği --------------------------
+# KAP'ın tam listesinde gerçek hisse olmayan çok sayıda kod var (il isimleri,
+# varlık kiralama/faktoring/finansman şirketleri, test kodları vb.) — İş
+# Yatırım bunlar için hep "veri yok" döner ve her denemede zaman kaybettirir.
+# Bu kodları bir kez öğrenip önbelleğe alıyoruz, sonraki taramalarda baştan
+# atlıyoruz (30 günde bir yeniden deneyip yeni IPO/kod değişikliklerini
+# kaçırmıyoruz).
+DEAD_TICKERS_FILE = os.path.join(os.path.dirname(__file__), "dead_tickers_cache.json")
+DEAD_TICKER_RECHECK_DAYS = 30
+
+
+def load_dead_tickers():
+    if os.path.exists(DEAD_TICKERS_FILE):
+        try:
+            with open(DEAD_TICKERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_dead_tickers(dead_map):
+    try:
+        with open(DEAD_TICKERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(dead_map, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"Ölü kod önbelleği yazılamadı: {e}")
+
+
+def is_dead_ticker(ticker, dead_map):
+    entry = dead_map.get(ticker)
+    if not entry:
+        return False
+    try:
+        marked = datetime.strptime(entry, "%Y-%m-%d").date()
+        return (datetime.now(TR_TZ).date() - marked).days < DEAD_TICKER_RECHECK_DAYS
+    except Exception:
+        return False
 
 
 def _pct_rank(series, ascending=True):
@@ -448,8 +490,12 @@ def round1_screen(tickers):
     start_time = time.time()
     cache = load_fin_cache()
     fetched_count = 0
+    dead_map = load_dead_tickers()
+    skipped_dead_count = 0
+    newly_dead_count = 0
 
     print(f"Önbellekte {len(cache)} şirketin bilanço verisi var.")
+    print(f"Ölü kod listesinde {len(dead_map)} kod var (gerçek hisse olmayan, atlanacak).")
 
     for i, tk in enumerate(tickers, 1):
         elapsed = time.time() - start_time
@@ -457,8 +503,15 @@ def round1_screen(tickers):
             print(f"Round 1 zaman bütçesini ({ROUND1_TIME_BUDGET_SECONDS}s) aştı, {i-1}/{total} hisseyle devam ediliyor.")
             break
 
-        price_data = fetch_price_snapshot(tk)
+        if is_dead_ticker(tk, dead_map):
+            skipped_dead_count += 1
+            continue
+
+        price_data, definitely_no_data = fetch_price_snapshot(tk)
         if not price_data:
+            if definitely_no_data:
+                dead_map[tk] = datetime.now(TR_TZ).strftime("%Y-%m-%d")
+                newly_dead_count += 1
             consecutive_failures += 1
             if consecutive_failures >= CONSECUTIVE_FAILURE_CIRCUIT_BREAKER:
                 print(f"Üst üste {CONSECUTIVE_FAILURE_CIRCUIT_BREAKER} başarısız istek, veri kaynağı muhtemelen bu IP'yi engelledi. Duruyorum.")
@@ -487,11 +540,14 @@ def round1_screen(tickers):
 
         if i % 25 == 0 or i == total:
             print(f"  ...{i}/{total} hisse tarandı (veri toplanan: {len(rows)}, "
-                  f"bilanço ağdan çekilen: {fetched_count}, geçen süre: {elapsed:.0f}s)")
+                  f"bilanço ağdan çekilen: {fetched_count}, ölü kod atlanan: {skipped_dead_count}, geçen süre: {elapsed:.0f}s)")
 
         time.sleep(random.uniform(IY_MIN_DELAY, IY_MAX_DELAY))
 
     save_fin_cache(cache)
+    save_dead_tickers(dead_map)
+    print(f"Bu çalıştırmada atlanan bilinen ölü kod sayısı: {skipped_dead_count}, "
+          f"yeni tespit edilen ölü kod sayısı: {newly_dead_count}")
 
     df = pd.DataFrame(rows)
     print(f"Veri toplanabilen hisse sayısı: {len(df)} / {total}")
