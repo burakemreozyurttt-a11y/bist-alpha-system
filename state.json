@@ -2,138 +2,138 @@
   "date": "2026-09-18",
   "ranking": [
     {
-      "ticker": "SANEL",
+      "ticker": "FMIZP",
       "rank": 1,
       "alpha_score": 72,
-      "bear_fv": 25.0,
-      "base_fv": 52.0,
-      "bull_fv": 75.0,
+      "bear_fv": 210.0,
+      "base_fv": 295.0,
+      "bull_fv": 350.0,
       "verdict": "ATTRACTIVE"
     },
     {
-      "ticker": "AHGAZ",
+      "ticker": "SANEL",
       "rank": 2,
-      "alpha_score": 72,
-      "bear_fv": 34.0,
-      "base_fv": 48.5,
-      "bull_fv": 58.0,
-      "verdict": "ATTRACTIVE"
-    },
-    {
-      "ticker": "TUPRS",
-      "rank": 3,
-      "alpha_score": 72,
-      "bear_fv": 340.0,
-      "base_fv": 480.0,
-      "bull_fv": 600.0,
-      "verdict": "ATTRACTIVE"
-    },
-    {
-      "ticker": "TCKRC",
-      "rank": 4,
       "alpha_score": 68,
-      "bear_fv": 85.0,
-      "base_fv": 125.0,
-      "bull_fv": 160.0,
-      "verdict": "ATTRACTIVE"
-    },
-    {
-      "ticker": "FMIZP",
-      "rank": 5,
-      "alpha_score": 68,
-      "bear_fv": 225.0,
-      "base_fv": 310.0,
-      "bull_fv": 390.0,
+      "bear_fv": 25.0,
+      "base_fv": 55.0,
+      "bull_fv": 95.0,
       "verdict": "ATTRACTIVE"
     },
     {
       "ticker": "YYLGD",
-      "rank": 6,
+      "rank": 3,
       "alpha_score": 68,
-      "bear_fv": 6.3,
-      "base_fv": 11.5,
-      "bull_fv": 15.0,
+      "bear_fv": 5.8,
+      "base_fv": 10.5,
+      "bull_fv": 13.5,
       "verdict": "ATTRACTIVE"
     },
     {
-      "ticker": "TEHOL",
-      "rank": 7,
+      "ticker": "INDES",
+      "rank": 4,
       "alpha_score": 68,
-      "bear_fv": 22.0,
-      "base_fv": 42.0,
-      "bull_fv": 58.0,
+      "bear_fv": 8.0,
+      "base_fv": 12.5,
+      "bull_fv": 16.0,
       "verdict": "ATTRACTIVE"
+    },
+    {
+      "ticker": "AHGAZ",
+      "rank": 5,
+      "alpha_score": 68,
+      "bear_fv": 32.0,
+      "base_fv": 48.0,
+      "bull_fv": 60.0,
+      "verdict": "ATTRACTIVE"
+    },
+    {
+      "ticker": "TUPRS",
+      "rank": 6,
+      "alpha_score": 68,
+      "bear_fv": 320.0,
+      "base_fv": 435.0,
+      "bull_fv": 500.0,
+      "verdict": "ATTRACTIVE"
+    },
+    {
+      "ticker": "TCKRC",
+      "rank": 7,
+      "alpha_score": 62,
+      "bear_fv": 75.0,
+      "base_fv": 115.0,
+      "bull_fv": 150.0,
+      "verdict": "WATCH"
     },
     {
       "ticker": "METEN",
       "rank": 8,
       "alpha_score": 62,
       "bear_fv": 12.0,
-      "base_fv": 17.5,
-      "bull_fv": 26.5,
+      "base_fv": 18.5,
+      "bull_fv": 28.0,
       "verdict": "WATCH"
     },
     {
-      "ticker": "SAFKR",
+      "ticker": "KOPOL",
       "rank": 9,
       "alpha_score": 62,
-      "bear_fv": 9.5,
-      "base_fv": 14.0,
-      "bull_fv": 20.0,
-      "verdict": "ATTRACTIVE"
+      "bear_fv": 2.8,
+      "base_fv": 4.5,
+      "bull_fv": 6.5,
+      "verdict": "WATCH"
     },
     {
       "ticker": "SAMAT",
       "rank": 10,
       "alpha_score": 62,
-      "bear_fv": 3.2,
-      "base_fv": 5.5,
-      "bull_fv": 9.0,
-      "verdict": "WATCH"
+      "bear_fv": 3.05,
+      "base_fv": 5.2,
+      "bull_fv": 7.5,
+      "verdict": "ATTRACTIVE"
     },
     {
       "ticker": "EREGL",
       "rank": 11,
       "alpha_score": 62,
-      "bear_fv": 27.0,
+      "bear_fv": 30.0,
       "base_fv": 38.0,
       "bull_fv": 48.0,
       "verdict": "WATCH"
     },
     {
-      "ticker": "BASGZ",
+      "ticker": "TEHOL",
       "rank": 12,
       "alpha_score": 62,
-      "bear_fv": 32.0,
+      "bear_fv": 22.0,
+      "base_fv": 38.0,
+      "bull_fv": 55.0,
+      "verdict": "WATCH"
+    },
+    {
+      "ticker": "BASGZ",
+      "rank": 13,
+      "alpha_score": 62,
+      "bear_fv": 35.0,
       "base_fv": 48.0,
       "bull_fv": 65.0,
       "verdict": "ATTRACTIVE"
     },
     {
       "ticker": "ISDMR",
-      "rank": 13,
+      "rank": 14,
       "alpha_score": 62,
-      "bear_fv": 45.5,
-      "base_fv": 56.0,
+      "bear_fv": 45.0,
+      "base_fv": 60.0,
       "bull_fv": 75.0,
       "verdict": "WATCH"
     },
     {
-      "ticker": "KOPOL",
-      "rank": 14,
-      "alpha_score": 58,
-      "bear_fv": 3.0,
-      "base_fv": 4.8,
-      "bull_fv": 7.0,
-      "verdict": "WATCH"
-    },
-    {
-      "ticker": "ARMGD",
+      "ticker": "ARSAN",
       "rank": 15,
-      "alpha_score": 55,
-      "bear_fv": 105.0,
-      "base_fv": 150.0,
-      "bull_fv": 220.0,
+      "alpha_score": 52,
+      "bear_fv": 2.5,
+      "base_fv": 4.2,
+      "bull_fv": 9.5,
       "verdict": "WATCH"
     }
   ]
