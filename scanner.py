@@ -943,17 +943,34 @@ def _find_latest_far_pdf_bytes(ticker):
             return None, None
 
         announcement_url = f"https://www.kap.org.tr/tr/Bildirim/{disc_index}"
-        resp = requests.get(announcement_url, timeout=30)
+        browser_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        resp = requests.get(announcement_url, timeout=30, headers={"User-Agent": browser_ua})
         resp.raise_for_status()
 
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(resp.text, "html5lib")
         pdf_link_tag = soup.select("a.modal-attachment.type-xsmall.bi-sky-black.maximize")
-        print(f"  [RAG-DEBUG {ticker}] PDF link bulundu mu: {bool(pdf_link_tag)}")
-        if not pdf_link_tag or not pdf_link_tag[0].get("href"):
+        href = None
+        if pdf_link_tag and pdf_link_tag[0].get("href"):
+            href = pdf_link_tag[0]["href"]
+        else:
+            # Yedek: spesifik CSS class bulunamadıysa, sayfadaki .pdf ile
+            # biten herhangi bir bağlantıyı ara (KAP'ın sayfa yapısı
+            # bildirim tarihine/tipine göre değişebiliyor).
+            fallback = soup.find("a", href=re.compile(r"\.pdf($|\?)", re.IGNORECASE))
+            if fallback and fallback.get("href"):
+                href = fallback["href"]
+                print(f"  [RAG-DEBUG {ticker}] Ana seçici başarısız, yedek .pdf linki bulundu")
+
+        print(f"  [RAG-DEBUG {ticker}] PDF link bulundu mu: {bool(href)}")
+        if not href:
+            has_modal_class = "modal-attachment" in resp.text
+            pdf_mentions = resp.text.lower().count(".pdf")
+            print(f"  [RAG-DEBUG {ticker}] Sayfa uzunluğu={len(resp.text)}, "
+                  f"'modal-attachment' geçiyor mu={has_modal_class}, sayfada '.pdf' geçme sayısı={pdf_mentions}")
             return None, latest
 
-        pdf_url = "https://www.kap.org.tr" + pdf_link_tag[0]["href"]
+        pdf_url = href if href.startswith("http") else ("https://www.kap.org.tr" + href)
         pdf_resp = requests.get(pdf_url, timeout=60)
         content_type = pdf_resp.headers.get("Content-Type", "").lower()
         print(f"  [RAG-DEBUG {ticker}] PDF indirme: status={pdf_resp.status_code}, content-type={content_type}, boyut={len(pdf_resp.content)} byte")
