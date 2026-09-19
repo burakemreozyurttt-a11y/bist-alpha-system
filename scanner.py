@@ -346,12 +346,39 @@ def save_dead_tickers(dead_map):
         print(f"Ölü kod önbelleği yazılamadı: {e}")
 
 
+# ÖNEMLİ: isyatirimhisse kütüphanesi, bağlantı zaman aşımı (İş Yatırım
+# sunucusuna hiç ulaşılamadığı geçici durumlar) ile "bu kod gerçekten
+# hisse değil" durumunu AYNI genel "No data was fetched" mesajıyla
+# bildiriyor — ikisini tek bir başarısızlıktan ayırt edemiyoruz. Bu yüzden
+# bir kodu ancak FARKLI GÜNLERDE üst üste STRIKES_TO_BLACKLIST kez
+# başarısız olursa "ölü" sayıyoruz; tek bir kötü gün (örn. İş Yatırım'ın
+# genel kesintisi) hiçbir gerçek hisseyi yanlışlıkla dışlamaz.
+STRIKES_TO_BLACKLIST = 3
+
+
+def register_ticker_failure(ticker, dead_map):
+    """Bir kodun bugün başarısız olduğunu kaydeder. Aynı gün içindeki
+    tekrar denemeler tek strike sayılır (gün bazlı sayaç)."""
+    today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
+    entry = dead_map.get(ticker, {"strikes": 0, "last_failed_date": None})
+    if entry.get("last_failed_date") != today_str:
+        entry["strikes"] = entry.get("strikes", 0) + 1
+        entry["last_failed_date"] = today_str
+        dead_map[ticker] = entry
+
+
+def register_ticker_success(ticker, dead_map):
+    """Bir kod başarılı veri döndürdüyse, önceki başarısızlık geçmişini sıfırla."""
+    if ticker in dead_map:
+        del dead_map[ticker]
+
+
 def is_dead_ticker(ticker, dead_map):
     entry = dead_map.get(ticker)
-    if not entry:
+    if not entry or entry.get("strikes", 0) < STRIKES_TO_BLACKLIST:
         return False
     try:
-        marked = datetime.strptime(entry, "%Y-%m-%d").date()
+        marked = datetime.strptime(entry["last_failed_date"], "%Y-%m-%d").date()
         return (datetime.now(TR_TZ).date() - marked).days < DEAD_TICKER_RECHECK_DAYS
     except Exception:
         return False
@@ -505,7 +532,6 @@ def round1_screen(tickers):
     fetched_count = 0
     dead_map = load_dead_tickers()
     skipped_dead_count = 0
-    newly_dead_count = 0
 
     print(f"Önbellekte {len(cache)} şirketin bilanço verisi var.")
     print(f"Ölü kod listesinde {len(dead_map)} kod var (gerçek hisse olmayan, atlanacak).")
@@ -522,9 +548,7 @@ def round1_screen(tickers):
 
         price_data, definitely_no_data = fetch_price_snapshot(tk)
         if not price_data:
-            if definitely_no_data:
-                dead_map[tk] = datetime.now(TR_TZ).strftime("%Y-%m-%d")
-                newly_dead_count += 1
+            register_ticker_failure(tk, dead_map)   # gün bazlı strike — tek kötü gün asla dışlamaya yetmez
             consecutive_failures += 1
             if consecutive_failures >= CONSECUTIVE_FAILURE_CIRCUIT_BREAKER:
                 print(f"Üst üste {CONSECUTIVE_FAILURE_CIRCUIT_BREAKER} başarısız istek, veri kaynağı muhtemelen bu IP'yi engelledi. Duruyorum.")
@@ -533,6 +557,7 @@ def round1_screen(tickers):
             continue
 
         consecutive_failures = 0
+        register_ticker_success(tk, dead_map)   # başarılı oldu, önceki strike geçmişi varsa temizle
 
         # Gerçekten alınıp satılamayacak kadar sığ olanları erkenden ele —
         # bunlar için bilanço çekmeye değmez (zaman tasarrufu)
@@ -559,8 +584,10 @@ def round1_screen(tickers):
 
     save_fin_cache(cache)
     save_dead_tickers(dead_map)
+    actually_dead = sum(1 for e in dead_map.values() if e.get("strikes", 0) >= STRIKES_TO_BLACKLIST)
     print(f"Bu çalıştırmada atlanan bilinen ölü kod sayısı: {skipped_dead_count}, "
-          f"yeni tespit edilen ölü kod sayısı: {newly_dead_count}")
+          f"toplam kalıcı olarak ölü ilan edilen kod sayısı: {actually_dead} "
+          f"(bir kod ancak {STRIKES_TO_BLACKLIST} farklı günde üst üste başarısız olursa kalıcı sayılır)")
 
     df = pd.DataFrame(rows)
     print(f"Veri toplanabilen hisse sayısı: {len(df)} / {total}")
