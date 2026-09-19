@@ -139,6 +139,13 @@ CACHE_SAVE_EVERY = 25              # her N şirkette bir önbelleği diske yaz (
 REPORT_CACHE_FILE = os.path.join(os.path.dirname(__file__), "report_excerpts_cache.json")
 REPORT_CACHE_MAX_AGE_DAYS = 60
 REPORT_NOT_FOUND_RETRY_DAYS = 3     # "rapor bulunamadı" sonucu çok daha kısa süre önbelleklenir
+
+# Faz 5 (RAG) şimdilik RAFA KALDIRILDI: KAP'ın bildirim sayfası JavaScript ile
+# dolduruluyor, düz bir HTTP isteği PDF linkini göremiyor; resmi indirme API'si
+# ise ücretli bir Borsa İstanbul sözleşmesi gerektiriyor. Kod duruyor, ileride
+# (örn. headless tarayıcı ile) tekrar denenebilir — şimdilik her taramada 22
+# kez boşuna KAP'a istek atıp zaman kaybetmemek için kapatıyoruz.
+RAG_ENABLED = False
 REPORT_MAX_EXCERPT_CHARS = 6000     # ajanlara giden özet metnin karakter sınırı
 REPORT_MAX_PDF_CHARS_TO_SCAN = 400_000   # PDF'ten okunacak maksimum karakter (çok büyük dosyalarda zaman aşımını önler)
 
@@ -292,7 +299,13 @@ def fetch_price_snapshot(ticker):
                 "return_60d": _return_over(60),
             }, False
         except Exception as e:
-            last_exception_was_empty_data = "Boş veri döndü" in str(e)
+            # "Boş veri döndü" bizim kendi ValueError'ımız; "No data was
+            # fetched" ise isyatirimhisse kütüphanesinin kendi hata mesajı —
+            # ikisi de "bu kod gerçek bir hisse değil" anlamına geliyor.
+            err_str = str(e)
+            last_exception_was_empty_data = (
+                "Boş veri döndü" in err_str or "No data was fetched" in err_str
+            )
             if attempt < IY_MAX_RETRIES:
                 time.sleep(IY_RETRY_BACKOFF)
             else:
@@ -1471,11 +1484,14 @@ def round2_deep_analysis(candidates_df):
         ticker = row["ticker"]
         print(f"  Derin analiz {i}/{len(records)}: {ticker} (Bear -> Bull -> CRO)")
 
-        report_excerpt, report_period = get_report_excerpt_cached(ticker, report_cache)
-        report_fetched_count += 1
-        if report_fetched_count % 5 == 0:
-            save_report_cache(report_cache)   # kesinti olursa ilerleme kaybolmasın
-        time.sleep(1.0)   # KAP'a da nazik davranalım
+        if RAG_ENABLED:
+            report_excerpt, report_period = get_report_excerpt_cached(ticker, report_cache)
+            report_fetched_count += 1
+            if report_fetched_count % 5 == 0:
+                save_report_cache(report_cache)   # kesinti olursa ilerleme kaybolmasın
+            time.sleep(1.0)   # KAP'a da nazik davranalım
+        else:
+            report_excerpt, report_period = None, None
 
         candidate = _build_candidate_for_agents(row, report_excerpt, report_period)
         result = analyze_with_gemini(candidate)
