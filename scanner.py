@@ -38,6 +38,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+import numpy as np
 import requests
 
 # isyatirimhisse kütüphanesi requests.get(url, timeout=10, ...) çağrısını kod
@@ -58,6 +59,7 @@ requests.get = _patched_requests_get
 
 from isyatirimhisse import fetch_stock_data as isy_fetch_stock_data
 from isyatirimhisse import fetch_financials as isy_fetch_financials
+from isyatirimhisse import fetch_index_data as isy_fetch_index_data
 from google import genai
 from google.genai import types
 
@@ -70,6 +72,16 @@ except ImportError as _rag_import_error:
     RAG_AVAILABLE = False
     print(f"[UYARI] RAG modülü (Faz 5) yüklenemedi, bu çalıştırmada devre dışı: {_rag_import_error}")
     print("[UYARI] requirements.txt içinde pykap, pypdf, beautifulsoup4, html5lib satırlarının olduğundan emin ol.")
+
+# Teknik Analiz Katmanı: intraday (gün içi) veri için borsapy (TradingView
+# WebSocket tabanlı). Sadece Round 1'in 22 finalistine uygulanıyor.
+try:
+    import borsapy as bpy
+    TECHNICAL_LAYER_AVAILABLE = True
+except ImportError as _tech_import_error:
+    TECHNICAL_LAYER_AVAILABLE = False
+    print(f"[UYARI] Teknik analiz katmanı yüklenemedi, bu çalıştırmada devre dışı: {_tech_import_error}")
+    print("[UYARI] requirements.txt içinde borsapy satırının olduğundan emin ol.")
 
 # --------------------------------------------------------------------------
 # CONFIG
@@ -1501,6 +1513,611 @@ def _build_candidate_for_agents(row, report_excerpt=None, report_period=None):
     return out
 
 
+# --------------------------------------------------------------------------
+# TEKNİK ANALİZ KATMANI (kullanıcı fikri, kurumsal düzey Volume Profile
+# tabanlı sinyaller) — SADECE Round 1'in 22 finalistine uygulanır.
+# Fundamental skor (Bear/Bull/CRO'dan gelen alpha_score) %70, bu katman %30
+# ağırlıkla birleştirilip TOP 10 seçimi/sıralaması bu birleşik skora göre
+# yapılır. Round 1'in 22 aday seçimini VE Round 2'nin analizini ETKİLEMEZ.
+# --------------------------------------------------------------------------
+TECH_FUNDAMENTAL_WEIGHT = 0.70
+TECH_TECHNICAL_WEIGHT = 0.30
+
+# %30'luk teknik payın kendi içindeki dağılımı (toplam = 1.0)
+# İlk 6'sı kullanıcının fikirleri, son 3'ü (sector_rs, foreign_interest,
+# avwap_52wk_high) Claude'un önerdiği ek kurumsal-düzey sinyaller.
+TECH_SUB_WEIGHTS = {
+    "weekly_vp_trend": 0.18,      # Haftalık Volume Profile dizilimi (POC/VA yukarı mı kayıyor)
+    "weekly_vp_level": 0.18,      # Fiyatın haftalık POC/VAH/VAL seviyelerine göre konumu
+    "sector_rs": 0.15,            # XU100'e göre göreceli güç (20/60 gün)
+    "anchored_vp": 0.13,          # Bilanço gününden itibaren Anchored VWAP'a göre konum
+    "foreign_interest": 0.12,     # Yabancı oranı (evrene göre yüzdelik dilim + kendi geçmişimize göre değişim)
+    "daily_pbd_shape": 0.10,      # Son 3 günün P/b/D hacim dağılım yapısı
+    "avwap_52wk_high": 0.08,      # 52 haftanın zirvesinden Anchored VWAP'a göre konum
+    "monthly_open": 0.04,         # Fiyat aylık açılışın üzerinde mi altında mı
+    "delta_obv": 0.02,            # Fiyat yönüne göre hacim (OBV mantığı) — gerçek bid/ask yok
+}
+# Her bileşenin teorik maksimum mutlak puanı (normalize etmek için)
+TECH_SUB_MAX_ABS = {
+    "weekly_vp_trend": 2.0,
+    "weekly_vp_level": 2.0,
+    "sector_rs": 2.0,
+    "anchored_vp": 1.0,
+    "foreign_interest": 1.0,
+    "daily_pbd_shape": 1.0,
+    "avwap_52wk_high": 1.0,
+    "monthly_open": 1.0,
+    "delta_obv": 1.0,
+}
+
+
+def _pick_col_ci(df, candidates):
+    """Sütun adını büyük/küçük harf duyarsız arar (borsapy'nin sütun isimleri
+    sürüm/varlık tipine göre değişebilir: Close/close, Volume/volume vb.)."""
+    lower_map = {c.lower(): c for c in df.columns}
+    for c in candidates:
+        if c.lower() in lower_map:
+            return lower_map[c.lower()]
+    return None
+
+
+# --- Bölüm A: mevcut günlük İş Yatırım verisiyle hesaplanabilenler --------
+def fetch_daily_series_isy(ticker, lookback_days=400):
+    """Teknik katman için uzunca bir günlük fiyat/ciro serisi çeker (Anchored
+    VWAP, aylık açılış ve OBV-tarzı Delta hesaplamaları için). Round 1'deki
+    kısa vadeli seriden bağımsız, ayrı bir çekim (finalistler için ek maliyet
+    küçük, ~22 istek)."""
+    end_date = datetime.now(TR_TZ).strftime("%d-%m-%Y")
+    start_date = (datetime.now(TR_TZ) - timedelta(days=lookback_days)).strftime("%d-%m-%Y")
+    try:
+        df = isy_fetch_stock_data(symbols=ticker, start_date=start_date, end_date=end_date)
+        if df is None or df.empty:
+            return None
+        close_col = _pick_column(df, ["HGDG_KAPANIS", "KAPANIS", "CLOSING_TL", "CLOSING"])
+        date_col = _pick_column(df, ["HGDG_TARIH", "TARIH"])
+        vol_try_col = _pick_column(df, ["HGDG_HACIM_TL", "HACIM_TL", "VOLUME_TL"])
+        vol_lot_col = _pick_column(df, ["HGDG_HACIM_LOT", "HACIM_LOT", "VOLUME_LOT", "HGDG_HACIM"])
+        if close_col is None or date_col is None:
+            return None
+
+        out = pd.DataFrame({
+            "date": pd.to_datetime(df[date_col], errors="coerce"),
+            "close": pd.to_numeric(df[close_col], errors="coerce"),
+        })
+        if vol_try_col is not None:
+            out["turnover"] = pd.to_numeric(df[vol_try_col], errors="coerce")
+        elif vol_lot_col is not None:
+            out["turnover"] = pd.to_numeric(df[vol_lot_col], errors="coerce") * out["close"]
+        else:
+            out["turnover"] = None
+
+        out = out.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+        return out if not out.empty else None
+    except Exception as e:
+        print(f"  [TEKNİK] {ticker}: günlük seri alınamadı ({e})")
+        return None
+
+
+def _most_recent_quarter_end(today):
+    """En yakın (bugünden önceki/eşit) çeyrek sonu tarihi — gerçek KAP bilanço
+    açıklama tarihi yerine kullanılan YAKLAŞIK bir 'bilanço günü' referansı.
+    (Faz 5/RAG kapalı olduğu için gerçek açıklama tarihine erişimimiz yok.)"""
+    quarter_ends = [(3, 31), (6, 30), (9, 30), (12, 31)]
+    candidates = []
+    for y in (today.year, today.year - 1):
+        for m, d in quarter_ends:
+            candidates.append(datetime(y, m, d).date())
+    candidates = [c for c in candidates if c <= today]
+    return max(candidates) if candidates else None
+
+
+def compute_anchored_vwap_signal(daily_df, current_price, today):
+    """Bilanço gününden (yaklaşık) itibaren Anchored VWAP hesaplar, fiyat
+    üzerindeyse +1, altındaysa -1 döner. Veri yetersizse None (nötr)."""
+    if daily_df is None or daily_df.empty or not current_price:
+        return None
+    anchor = _most_recent_quarter_end(today)
+    if anchor is None:
+        return None
+    sub = daily_df[(daily_df["date"].dt.date >= anchor) & daily_df["turnover"].notna() & (daily_df["close"] > 0)]
+    if len(sub) < 3:
+        return None
+    volume_approx = sub["turnover"] / sub["close"]
+    total_vol = volume_approx.sum()
+    if total_vol <= 0:
+        return None
+    avwap = sub["turnover"].sum() / total_vol
+    if avwap <= 0:
+        return None
+    return 1.0 if current_price >= avwap else -1.0
+
+
+def compute_monthly_open_signal(daily_df, current_price, today):
+    """Fiyat, bu ayın ilk işlem gününün kapanışına göre üstte mi altta mı."""
+    if daily_df is None or daily_df.empty or not current_price:
+        return None
+    month_start = today.replace(day=1)
+    sub = daily_df[daily_df["date"].dt.date >= month_start]
+    if sub.empty:
+        return None
+    monthly_ref = sub.iloc[0]["close"]
+    if not monthly_ref or monthly_ref <= 0:
+        return None
+    return 1.0 if current_price >= monthly_ref else -1.0
+
+
+def compute_obv_delta_signal(daily_df, lookback=20):
+    """OBV mantığıyla (gerçek bid/ask yok, fiyat yönüne göre hacmi +/- sayarak)
+    son `lookback` günün net akışını hesaplar."""
+    if daily_df is None or len(daily_df) < 6:
+        return None
+    sub = daily_df.tail(lookback + 1).copy()
+    sub["price_change"] = sub["close"].diff()
+    sub = sub.dropna(subset=["price_change", "turnover"])
+    if sub.empty:
+        return None
+    sub["volume_approx"] = sub["turnover"] / sub["close"]
+    sub["signed_vol"] = np.where(
+        sub["price_change"] > 0, sub["volume_approx"],
+        np.where(sub["price_change"] < 0, -sub["volume_approx"], 0.0)
+    )
+    net = sub["signed_vol"].sum()
+    if net == 0:
+        return 0.0
+    return 1.0 if net > 0 else -1.0
+
+
+def _generic_return(series_dates_values, n_days):
+    """Bir (tarih, değer) serisinde n_days işlem günü öncesine göre getiri."""
+    if series_dates_values is None or len(series_dates_values) <= n_days:
+        return None
+    last = series_dates_values.iloc[-1]
+    past = series_dates_values.iloc[-(n_days + 1)]
+    if past and past > 0:
+        return (last / past) - 1
+    return None
+
+
+_xu100_cache = None
+
+
+def _get_xu100_series():
+    """XU100 endeksinin günlük seviyesini bir kez çekip run boyunca önbellekte
+    tutar (22 finalist için 22 kez çekmeye gerek yok)."""
+    global _xu100_cache
+    if _xu100_cache is not None:
+        return _xu100_cache
+    end_date = datetime.now(TR_TZ).strftime("%d-%m-%Y")
+    start_date = (datetime.now(TR_TZ) - timedelta(days=120)).strftime("%d-%m-%Y")
+    try:
+        df = isy_fetch_index_data(indices="XU100", start_date=start_date, end_date=end_date)
+        if df is None or df.empty:
+            _xu100_cache = pd.DataFrame()
+            return _xu100_cache
+        df = df.sort_values("DATE").reset_index(drop=True)
+        print(f"  [TEKNİK-DEBUG XU100] {len(df)} günlük endeks verisi çekildi")
+        _xu100_cache = df
+        return df
+    except Exception as e:
+        print(f"  [TEKNİK] XU100 endeks verisi alınamadı (Sektör RS sinyali devre dışı): {e}")
+        _xu100_cache = pd.DataFrame()
+        return _xu100_cache
+
+
+def compute_sector_rs_signal(return_20d, return_60d):
+    """Hissenin kendi 20/60 günlük getirisini XU100'ün aynı dönemdeki
+    getirisiyle karşılaştırır. Her iki dönemde de endeksi geçerse +2,
+    ikisinde de geride kalırsa -2. (Sektör endeksleri yerine XU100
+    kullanıyoruz — daha basit ve güvenilir bir referans noktası.)"""
+    xu100 = _get_xu100_series()
+    if xu100 is None or xu100.empty or return_20d is None or return_60d is None:
+        return None
+    bench_20d = _generic_return(xu100["VALUE"], 20)
+    bench_60d = _generic_return(xu100["VALUE"], 60)
+    if bench_20d is None or bench_60d is None:
+        return None
+    score = 0.0
+    score += 1.0 if return_20d > bench_20d else -1.0
+    score += 1.0 if return_60d > bench_60d else -1.0
+    return score
+
+
+FOREIGN_RATIO_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "foreign_ratio_history.json")
+_screener_cache = None
+_foreign_ratio_history_cache = None
+
+
+def load_foreign_ratio_history():
+    global _foreign_ratio_history_cache
+    if _foreign_ratio_history_cache is not None:
+        return _foreign_ratio_history_cache
+    if os.path.exists(FOREIGN_RATIO_HISTORY_FILE):
+        try:
+            with open(FOREIGN_RATIO_HISTORY_FILE, "r", encoding="utf-8") as f:
+                _foreign_ratio_history_cache = json.load(f)
+                return _foreign_ratio_history_cache
+        except Exception:
+            pass
+    _foreign_ratio_history_cache = {}
+    return _foreign_ratio_history_cache
+
+
+def save_foreign_ratio_history():
+    if _foreign_ratio_history_cache is None:
+        return
+    try:
+        with open(FOREIGN_RATIO_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(_foreign_ratio_history_cache, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"Yabancı oranı geçmişi yazılamadı: {e}")
+
+
+def _get_full_screener_df():
+    """borsapy'nin İş Yatırım tabanlı screener'ından TÜM BIST evrenini bir
+    kez çeker (yabancı oranı dahil), run boyunca önbellekte tutar."""
+    global _screener_cache
+    if _screener_cache is not None:
+        return _screener_cache
+    if not TECHNICAL_LAYER_AVAILABLE:
+        _screener_cache = pd.DataFrame()
+        return _screener_cache
+    try:
+        df = bpy.screen_stocks(market_cap_min=0)
+        if df is None or df.empty:
+            print("  [TEKNİK-DEBUG] Screener boş sonuç döndü")
+            _screener_cache = pd.DataFrame()
+        else:
+            print(f"  [TEKNİK-DEBUG] Screener {len(df)} şirket döndürdü, sütunlar: {df.columns.tolist()}")
+            _screener_cache = df
+        return _screener_cache
+    except Exception as e:
+        print(f"  [TEKNİK] Screener (yabancı ilgisi sinyali) alınamadı: {e}")
+        _screener_cache = pd.DataFrame()
+        return _screener_cache
+
+
+def compute_foreign_interest_signal(ticker):
+    """Yabancı oranı sinyali iki bileşenden oluşur:
+    1) Anlık seviyenin BIST evrenine göre yüzdelik dilimi (üst %30 = ilgi
+       yüksek, alt %30 = ilgi düşük)
+    2) Kendi geçmişimize göre değişim (biriktirdiğimiz günlük kayıttan) —
+       bu, sistem birkaç gün çalıştıkça otomatik olarak zenginleşir.
+    borsapy'nin tek seferlik anlık veri sunması nedeniyle GERÇEK haftalık/
+    aylık değişim ancak kendi geçmiş kaydımızla mümkün; ilk günlerde bu
+    kısım N/A kalır, bu normaldir."""
+    df = _get_full_screener_df()
+    if df is None or df.empty:
+        return None
+
+    symbol_col = _pick_col_ci(df, ["symbol", "Symbol", "code", "Code"])
+    ratio_col = _pick_col_ci(df, ["foreign_ratio", "Foreign_Ratio", "yabanci_oran"])
+    if not symbol_col or not ratio_col:
+        return None
+
+    row = df[df[symbol_col] == ticker]
+    if row.empty:
+        return None
+    current_ratio = row.iloc[0][ratio_col]
+    if pd.isna(current_ratio):
+        return None
+
+    # Bileşen 1: evrene göre yüzdelik dilim
+    all_ratios = pd.to_numeric(df[ratio_col], errors="coerce").dropna()
+    percentile = (all_ratios < current_ratio).mean() if len(all_ratios) > 5 else None
+    level_score = None
+    if percentile is not None:
+        if percentile >= 0.70:
+            level_score = 1.0
+        elif percentile <= 0.30:
+            level_score = -1.0
+        else:
+            level_score = 0.0
+
+    # Bileşen 2: kendi geçmiş kaydımıza göre değişim + bugünün kaydını sakla
+    today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
+    history = load_foreign_ratio_history()
+    change_score = None
+    past_entries = history.get(ticker, [])
+    week_ago_cutoff = (datetime.now(TR_TZ) - timedelta(days=9)).strftime("%Y-%m-%d")
+    past_candidates = [e for e in past_entries if e["date"] <= week_ago_cutoff]
+    if past_candidates:
+        past_ratio = past_candidates[-1]["ratio"]
+        if past_ratio:
+            change_score = 1.0 if current_ratio > past_ratio else (-1.0 if current_ratio < past_ratio else 0.0)
+
+    past_entries.append({"date": today_str, "ratio": float(current_ratio)})
+    history[ticker] = past_entries[-40:]   # son ~40 kayıt yeterli (haftalık/aylık karşılaştırma için)
+
+    if level_score is None and change_score is None:
+        return None
+    if change_score is None:
+        return level_score
+    if level_score is None:
+        return change_score
+    return (level_score + change_score) / 2.0
+
+
+def compute_avwap_52wk_high_signal(daily_df, current_price):
+    """Son 52 haftanın en yüksek kapanışından itibaren Anchored VWAP
+    hesaplar. Fiyat bunun üzerindeyse o zirvede alım yapanlar artık kârda
+    demektir (+1); altındaysa hâlâ 'hapsolmuş arz' baskısı sürüyor (-1)."""
+    if daily_df is None or len(daily_df) < 30 or not current_price:
+        return None
+    lookback = daily_df.tail(252)   # ~52 hafta işlem günü
+    if lookback.empty:
+        return None
+    peak_idx = lookback["close"].idxmax()
+    peak_date = lookback.loc[peak_idx, "date"]
+
+    sub = daily_df[(daily_df["date"] >= peak_date) & daily_df["turnover"].notna() & (daily_df["close"] > 0)]
+    if len(sub) < 3:
+        return None
+    volume_approx = sub["turnover"] / sub["close"]
+    total_vol = volume_approx.sum()
+    if total_vol <= 0:
+        return None
+    avwap = sub["turnover"].sum() / total_vol
+    if avwap <= 0:
+        return None
+    return 1.0 if current_price >= avwap else -1.0
+
+
+# --- Bölüm B: borsapy (TradingView) intraday veri gerektirenler -----------
+def fetch_intraday_bars(ticker, period="1ay", interval="15m"):
+    """borsapy ile intraday mum verisi çeker. CANLI TEST EDİLEMEDİ (bu
+    sandbox'ın TradingView'a ağ erişimi yok) — bu yüzden bol teşhis logu
+    içeriyor ve her adımda hata olursa None döner, sistem çökmez."""
+    if not TECHNICAL_LAYER_AVAILABLE:
+        return None
+    try:
+        stock = bpy.Ticker(ticker)
+        df = stock.history(period=period, interval=interval)
+        if df is None or df.empty:
+            print(f"  [TEKNİK-DEBUG {ticker}] intraday veri boş döndü (period={period}, interval={interval})")
+            return None
+
+        high_col = _pick_col_ci(df, ["High", "high"])
+        low_col = _pick_col_ci(df, ["Low", "low"])
+        close_col = _pick_col_ci(df, ["Close", "close"])
+        vol_col = _pick_col_ci(df, ["Volume", "volume"])
+        if not all([high_col, low_col, close_col, vol_col]):
+            print(f"  [TEKNİK-DEBUG {ticker}] beklenen sütunlar bulunamadı: {df.columns.tolist()}")
+            return None
+
+        out = df.rename(columns={high_col: "high", low_col: "low", close_col: "close", vol_col: "volume"})
+        # Tarih/saat index'ini yakalamaya çalış (farklı sürümlerde index ya da sütun olabilir)
+        if isinstance(out.index, pd.DatetimeIndex):
+            out = out.reset_index().rename(columns={out.index.name or "index": "datetime"})
+        else:
+            dt_col = _pick_col_ci(out, ["Date", "Datetime", "date", "datetime"])
+            if dt_col:
+                out = out.rename(columns={dt_col: "datetime"})
+                out["datetime"] = pd.to_datetime(out["datetime"], errors="coerce")
+            else:
+                print(f"  [TEKNİK-DEBUG {ticker}] tarih/saat sütunu bulunamadı: {df.columns.tolist()}")
+                return None
+
+        out = out.dropna(subset=["datetime", "high", "low", "close", "volume"])
+        return out if not out.empty else None
+    except Exception as e:
+        print(f"  [TEKNİK] {ticker}: intraday veri çekilemedi ({e})")
+        return None
+
+
+def _compute_volume_profile(bars_df, n_bins=40, value_area_pct=0.70):
+    """Intraday barlardan basit bir Volume Profile hesaplar: her barın hacmini
+    tipik fiyatına ((H+L+C)/3) göre bir fiyat aralığına (bin) atar. Gerçek
+    tick-level POC kadar hassas değil ama standart bir yaklaşıklıktır."""
+    if bars_df is None or bars_df.empty:
+        return None
+    price_min = bars_df["low"].min()
+    price_max = bars_df["high"].max()
+    if pd.isna(price_min) or pd.isna(price_max) or price_max <= price_min:
+        return None
+
+    bins = np.linspace(price_min, price_max, n_bins + 1)
+    typical = (bars_df["high"] + bars_df["low"] + bars_df["close"]) / 3
+    bin_idx = np.clip(np.digitize(typical, bins) - 1, 0, n_bins - 1)
+
+    vol_by_bin = np.zeros(n_bins)
+    for b, v in zip(bin_idx, bars_df["volume"]):
+        if pd.notna(v):
+            vol_by_bin[b] += v
+
+    total_vol = vol_by_bin.sum()
+    if total_vol <= 0:
+        return None
+
+    poc_idx = int(np.argmax(vol_by_bin))
+    poc_price = (bins[poc_idx] + bins[poc_idx + 1]) / 2
+
+    target = total_vol * value_area_pct
+    lo, hi = poc_idx, poc_idx
+    cur_vol = vol_by_bin[poc_idx]
+    while cur_vol < target and (lo > 0 or hi < n_bins - 1):
+        left_vol = vol_by_bin[lo - 1] if lo > 0 else -1
+        right_vol = vol_by_bin[hi + 1] if hi < n_bins - 1 else -1
+        if right_vol >= left_vol:
+            hi += 1
+            cur_vol += vol_by_bin[hi]
+        else:
+            lo -= 1
+            cur_vol += vol_by_bin[lo]
+
+    return {"poc": poc_price, "vah": bins[hi + 1], "val": bins[lo]}
+
+
+def compute_weekly_vp_signals(ticker, current_price):
+    """Son 3 TAMAMLANMIŞ hafta için haftalık Volume Profile hesaplar.
+    Döndürür: (weekly_vp_trend_score, weekly_vp_level_score) — ikisi de None
+    olabilir (veri yoksa/yetersizse)."""
+    bars = fetch_intraday_bars(ticker, period="1ay", interval="15m")
+    if bars is None or len(bars) < 30:
+        return None, None
+
+    bars = bars.copy()
+    bars["iso_year"] = bars["datetime"].dt.isocalendar().year
+    bars["iso_week"] = bars["datetime"].dt.isocalendar().week
+    bars["week_key"] = list(zip(bars["iso_year"], bars["iso_week"]))
+
+    today = datetime.now(TR_TZ).date()
+    current_iso = today.isocalendar()
+    current_week_key = (current_iso[0], current_iso[1])
+
+    week_keys_sorted = sorted(set(bars["week_key"]) - {current_week_key})
+    if len(week_keys_sorted) < 2:
+        print(f"  [TEKNİK-DEBUG {ticker}] yeterli tamamlanmış hafta yok (bulunan: {len(week_keys_sorted)})")
+        return None, None
+
+    last_weeks = week_keys_sorted[-3:]  # en eski -> en yeni, en fazla 3 hafta
+    profiles = []
+    for wk in last_weeks:
+        week_bars = bars[bars["week_key"] == wk]
+        prof = _compute_volume_profile(week_bars)
+        if prof:
+            profiles.append(prof)
+
+    if len(profiles) < 2:
+        print(f"  [TEKNİK-DEBUG {ticker}] {len(profiles)} haftalık profil hesaplanabildi (en az 2 lazım)")
+        return None, None
+
+    # --- Trend skoru: POC ve VA (orta nokta) art arda yükseliyor mu? -------
+    pocs = [p["poc"] for p in profiles]
+    va_mids = [(p["vah"] + p["val"]) / 2 for p in profiles]
+
+    if len(profiles) == 3:
+        poc_up_1 = pocs[1] > pocs[0]
+        poc_up_2 = pocs[2] > pocs[1]
+        va_up_1 = va_mids[1] > va_mids[0]
+        va_up_2 = va_mids[2] > va_mids[1]
+        if poc_up_1 and poc_up_2 and va_up_1 and va_up_2:
+            trend_score = 2.0    # 3 hafta boyunca kesintisiz güçlenme
+        elif poc_up_2 and va_up_2:
+            trend_score = 1.0    # son hafta öncekini yenerek yukarı kaydı
+        elif not poc_up_2 and not va_up_2:
+            trend_score = -1.0   # son hafta geriledi
+        else:
+            trend_score = 0.0
+    else:  # 2 hafta
+        trend_score = 1.0 if (pocs[1] > pocs[0] and va_mids[1] > va_mids[0]) else (
+            -1.0 if (pocs[1] < pocs[0] and va_mids[1] < va_mids[0]) else 0.0
+        )
+
+    # --- Seviye skoru: bugünkü fiyat, geçmiş haftaların seviyelerine göre nerede? ---
+    latest = profiles[-1]
+    all_pocs = pocs
+    all_val = [p["val"] for p in profiles]
+    all_vah = [p["vah"] for p in profiles]
+
+    if current_price is None:
+        level_score = None
+    elif current_price < min(all_val):
+        level_score = -1.0    # en alt VP seviyesinin bile altında
+    elif current_price > max(all_pocs) and len(profiles) >= 2 and current_price > max(all_vah[:-1] or [0]):
+        level_score = 2.0     # geçmiş haftaların value area'larının üzerinde
+    elif latest["val"] <= current_price <= latest["vah"]:
+        level_score = 1.0     # son haftanın value area'sı içinde
+    elif current_price > max(all_pocs):
+        level_score = 1.0     # tüm POC'ların üzerinde
+    else:
+        level_score = 0.0
+
+    print(f"  [TEKNİK-DEBUG {ticker}] {len(profiles)} hafta VP hesaplandı, "
+          f"POC dizilimi={[round(p,2) for p in pocs]}, trend={trend_score}, seviye={level_score}")
+    return trend_score, level_score
+
+
+def compute_daily_pbd_signal(ticker):
+    """Son 3 işlem gününün hacim dağılım şeklini (P/b/D) sınıflandırır.
+    Basitleştirilmiş yaklaşım: günün VWAP'ının, günün High-Low aralığındaki
+    GÖRECELİ konumunu kullanır (0=Low, 1=High). >=0.6 -> P (üstte
+    yoğunlaşma), <=0.4 -> b (altta yoğunlaşma), arası -> D (dengeli)."""
+    bars = fetch_intraday_bars(ticker, period="5g", interval="1h")
+    if bars is None or bars.empty:
+        return None
+
+    bars = bars.copy()
+    bars["date_only"] = bars["datetime"].dt.date
+    days = sorted(bars["date_only"].unique())[-3:]
+    if len(days) < 2:
+        return None
+
+    shapes = []
+    for d in days:
+        day_bars = bars[bars["date_only"] == d]
+        if day_bars.empty:
+            continue
+        day_high = day_bars["high"].max()
+        day_low = day_bars["low"].min()
+        if day_high <= day_low:
+            continue
+        typical = (day_bars["high"] + day_bars["low"] + day_bars["close"]) / 3
+        vwap = (typical * day_bars["volume"]).sum() / day_bars["volume"].sum() if day_bars["volume"].sum() > 0 else None
+        if vwap is None:
+            continue
+        position = (vwap - day_low) / (day_high - day_low)
+        if position >= 0.6:
+            shapes.append("P")
+        elif position <= 0.4:
+            shapes.append("b")
+        else:
+            shapes.append("D")
+
+    if not shapes:
+        return None
+
+    print(f"  [TEKNİK-DEBUG {ticker}] son {len(shapes)} günün P/b/D yapısı: {shapes}")
+    p_or_d = sum(1 for s in shapes if s in ("P", "D"))
+    b_count = sum(1 for s in shapes if s == "b")
+    if b_count > p_or_d:
+        return -1.0
+    elif p_or_d > b_count:
+        return 1.0
+    return 0.0
+
+
+def compute_technical_score(ticker, current_price, return_20d=None, return_60d=None):
+    """Bir hisse için 9 teknik bileşeni hesaplar, kullanılabilenleri
+    TECH_SUB_WEIGHTS ile ağırlıklandırıp 0-100 ölçeğine (50=nötr) çevirir.
+    Hesaplanamayan bileşenler dışlanır, kalan ağırlıklar yeniden normalize
+    edilir — bu yüzden borsapy/intraday veri gelmese bile sistem (sadece
+    günlük veriye dayanan bileşenlerle) çalışmaya devam eder."""
+    daily_df = fetch_daily_series_isy(ticker)
+    today = datetime.now(TR_TZ).date()
+
+    raw = {
+        "anchored_vp": compute_anchored_vwap_signal(daily_df, current_price, today),
+        "monthly_open": compute_monthly_open_signal(daily_df, current_price, today),
+        "delta_obv": compute_obv_delta_signal(daily_df),
+        "avwap_52wk_high": compute_avwap_52wk_high_signal(daily_df, current_price),
+        "sector_rs": compute_sector_rs_signal(return_20d, return_60d),
+        "foreign_interest": compute_foreign_interest_signal(ticker),
+    }
+
+    if TECHNICAL_LAYER_AVAILABLE:
+        trend_score, level_score = compute_weekly_vp_signals(ticker, current_price)
+        raw["weekly_vp_trend"] = trend_score
+        raw["weekly_vp_level"] = level_score
+        raw["daily_pbd_shape"] = compute_daily_pbd_signal(ticker)
+    else:
+        raw["weekly_vp_trend"] = None
+        raw["weekly_vp_level"] = None
+        raw["daily_pbd_shape"] = None
+
+    available = {k: v for k, v in raw.items() if v is not None}
+    if not available:
+        return 50.0, raw   # tamamen veri yoksa tam nötr
+
+    total_weight = sum(TECH_SUB_WEIGHTS[k] for k in available)
+    combined_z = sum(
+        TECH_SUB_WEIGHTS[k] * (v / TECH_SUB_MAX_ABS[k]) for k, v in available.items()
+    ) / total_weight
+
+    technical_score = 50.0 + 50.0 * combined_z
+    technical_score = max(0.0, min(100.0, technical_score))
+    return technical_score, raw
+
+
 def round2_deep_analysis(candidates_df):
     results = []
     records = candidates_df.to_dict("records")
@@ -1528,6 +2145,8 @@ def round2_deep_analysis(candidates_df):
             result["screening_score"] = round(float(row.get("screening_score", 0)), 1)
             result["cap_bucket"] = row.get("cap_bucket")
             result["had_report_excerpt"] = bool(report_excerpt)
+            result["_return_20d"] = row.get("return_20d")
+            result["_return_60d"] = row.get("return_60d")
             results.append(result)
         time.sleep(SLEEP_BETWEEN_GEMINI_CALLS)
 
@@ -1634,6 +2253,8 @@ def build_report(ranked, last_seen_map, total_scanned, deep_count):
         lines.append(f"Alpha Score: {item.get('alpha_score','N/A')}/100  |  Data Confidence: {item.get('data_confidence','N/A')}/100")
         if item.get("screening_score") is not None:
             lines.append(f"Round 1 Tarama Skoru: {item.get('screening_score')}/100")
+        if item.get("technical_score") is not None:
+            lines.append(f"Teknik Skor: {item.get('technical_score')}/100  |  Birleşik Skor (F:%70+T:%30): {item.get('combined_score')}/100")
         lines.append(f"Fiyat: {fmt(item.get('price'))} TL")
         if item.get("had_report_excerpt"):
             lines.append("📄 Faaliyet raporu bulundu ve analize dahil edildi")
@@ -1690,8 +2311,10 @@ def build_report(ranked, last_seen_map, total_scanned, deep_count):
         else:
             delta = "(YENİ)"
         liq = " ⚠️" if item.get("low_liquidity_flag") else ""
+        combined = item.get("combined_score")
+        score_label = f"Skor {combined}" if combined is not None else f"Alpha {item.get('alpha_score','N/A')}"
         lines.append(
-            f"{i}. {item['ticker']}{liq} | Alpha {item.get('alpha_score','N/A')} | "
+            f"{i}. {item['ticker']}{liq} | {score_label} | "
             f"Fiyat {fmt(item.get('price'))} | Base FV {fmt(item.get('base_fv'))} | {delta}"
         )
     lines.append("")
@@ -1761,7 +2384,21 @@ def main():
         send_telegram_message("⚠️ Gemini analizinden sonuç alınamadı, lütfen logları kontrol et.")
         return
 
-    ranked = sorted(analyzed, key=lambda x: x.get("alpha_score", 0), reverse=True)
+    print("Teknik Analiz Katmanı: 22 finalist için hesaplanıyor (fundamental %70 + teknik %30)...")
+    for item in analyzed:
+        tech_score, tech_raw = compute_technical_score(
+            item["ticker"], item.get("price"),
+            return_20d=item.get("_return_20d"), return_60d=item.get("_return_60d"),
+        )
+        item["technical_score"] = round(tech_score, 1)
+        item["technical_components"] = tech_raw
+        item["combined_score"] = round(
+            item.get("alpha_score", 0) * TECH_FUNDAMENTAL_WEIGHT + tech_score * TECH_TECHNICAL_WEIGHT, 1
+        )
+        time.sleep(0.5)   # borsapy/İş Yatırım'a nazik davranalım
+    save_foreign_ratio_history()
+
+    ranked = sorted(analyzed, key=lambda x: x.get("combined_score", 0), reverse=True)
     for i, item in enumerate(ranked, 1):
         item["rank"] = i
 
@@ -1785,6 +2422,7 @@ def main():
         {
             "ticker": r["ticker"], "rank": r["rank"],
             "alpha_score": r.get("alpha_score"),
+            "technical_score": r.get("technical_score"), "combined_score": r.get("combined_score"),
             "bear_fv": r.get("bear_fv"), "base_fv": r.get("base_fv"), "bull_fv": r.get("bull_fv"),
             "verdict": r.get("verdict"),
         }
