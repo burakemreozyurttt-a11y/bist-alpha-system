@@ -748,5 +748,175 @@
         "verdict": "WATCH"
       }
     ]
+  },
+  {
+    "date": "2026-09-21",
+    "ranking": [
+      {
+        "ticker": "AHGAZ",
+        "rank": 1,
+        "alpha_score": 74,
+        "technical_score": 100.0,
+        "combined_score": 81.8,
+        "bear_fv": 32.0,
+        "base_fv": 48.0,
+        "bull_fv": 65.0,
+        "verdict": "ATTRACTIVE"
+      },
+      {
+        "ticker": "TUPRS",
+        "rank": 2,
+        "alpha_score": 72,
+        "technical_score": 100.0,
+        "combined_score": 80.4,
+        "bear_fv": 340.0,
+        "base_fv": 480.0,
+        "bull_fv": 600.0,
+        "verdict": "ATTRACTIVE"
+      },
+      {
+        "ticker": "ISDMR",
+        "rank": 3,
+        "alpha_score": 62,
+        "technical_score": 100.0,
+        "combined_score": 73.4,
+        "bear_fv": 52.0,
+        "base_fv": 65.0,
+        "bull_fv": 78.0,
+        "verdict": "WATCH"
+      },
+      {
+        "ticker": "ARDYZ",
+        "rank": 4,
+        "alpha_score": 74,
+        "technical_score": 17.9,
+        "combined_score": 57.2,
+        "bear_fv": 43.5,
+        "base_fv": 85.0,
+        "bull_fv": 124.0,
+        "verdict": "ATTRACTIVE"
+      },
+      {
+        "ticker": "SANEL",
+        "rank": 5,
+        "alpha_score": 72,
+        "technical_score": 0.0,
+        "combined_score": 50.4,
+        "bear_fv": 25.0,
+        "base_fv": 52.0,
+        "bull_fv": 75.0,
+        "verdict": "ATTRACTIVE"
+      },
+      {
+        "ticker": "FMIZP",
+        "rank": 6,
+        "alpha_score": 72,
+        "technical_score": 0.0,
+        "combined_score": 50.4,
+        "bear_fv": 220.0,
+        "base_fv": 295.0,
+        "bull_fv": 350.0,
+        "verdict": "ATTRACTIVE"
+      },
+      {
+        "ticker": "DMRGD",
+        "rank": 7,
+        "alpha_score": 68,
+        "technical_score": 0.0,
+        "combined_score": 47.6,
+        "bear_fv": 8.0,
+        "base_fv": 11.5,
+        "bull_fv": 14.5,
+        "verdict": "ATTRACTIVE"
+      },
+      {
+        "ticker": "EREGL",
+        "rank": 8,
+        "alpha_score": 58,
+        "technical_score": 22.6,
+        "combined_score": 47.4,
+        "bear_fv": 28.5,
+        "base_fv": 38.0,
+        "bull_fv": 46.0,
+        "verdict": "WATCH"
+      },
+      {
+        "ticker": "BASGZ",
+        "rank": 9,
+        "alpha_score": 58,
+        "technical_score": 17.9,
+        "combined_score": 46.0,
+        "bear_fv": 33.0,
+        "base_fv": 48.0,
+        "bull_fv": 62.0,
+        "verdict": "ATTRACTIVE"
+      },
+      {
+        "ticker": "ARMGD",
+        "rank": 10,
+        "alpha_score": 62,
+        "technical_score": 4.8,
+        "combined_score": 44.8,
+        "bear_fv": 115.0,
+        "base_fv": 150.0,
+        "bull_fv": 200.0,
+        "verdict": "WATCH"
+      },
+      {
+        "ticker": "TCKRC",
+        "rank": 11,
+        "alpha_score": 62,
+        "technical_score": 0.0,
+        "combined_score": 43.4,
+        "bear_fv": 85.0,
+        "base_fv": 125.0,
+        "bull_fv": 165.0,
+        "verdict": "WATCH"
+      },
+      {
+        "ticker": "YYLGD",
+        "rank": 12,
+        "alpha_score": 62,
+        "technical_score": 0.0,
+        "combined_score": 43.4,
+        "bear_fv": 6.0,
+        "base_fv": 10.5,
+        "bull_fv": 14.0,
+        "verdict": "WATCH"
+      },
+      {
+        "ticker": "SAMAT",
+        "rank": 13,
+        "alpha_score": 62,
+        "technical_score": 0.0,
+        "combined_score": 43.4,
+        "bear_fv": 3.0,
+        "base_fv": 5.2,
+        "bull_fv": 7.5,
+        "verdict": "ATTRACTIVE"
+      },
+      {
+        "ticker": "ARSAN",
+        "rank": 14,
+        "alpha_score": 52,
+        "technical_score": 22.6,
+        "combined_score": 43.2,
+        "bear_fv": 2.2,
+        "base_fv": 4.5,
+        "bull_fv": 8.0,
+        "verdict": "WATCH"
+      },
+      {
+        "ticker": "VANGD",
+        "rank": 15,
+        "alpha_score": 58,
+        "technical_score": 0.0,
+        "combined_score": 40.6,
+        "bear_fv": 42.0,
+        "base_fv": 65.0,
+        "bull_fv": 95.0,
+        "verdict": "WATCH"
+      }
+    ]
   }
 ]
