@@ -1863,7 +1863,7 @@ def compute_avwap_52wk_high_signal(daily_df, current_price):
 
 
 # --- Bölüm B: borsapy (TradingView) intraday veri gerektirenler -----------
-def fetch_intraday_bars(ticker, period="1ay", interval="15m"):
+def fetch_intraday_bars(ticker, period="1mo", interval="15m"):
     """borsapy ile intraday mum verisi çeker. CANLI TEST EDİLEMEDİ (bu
     sandbox'ın TradingView'a ağ erişimi yok) — bu yüzden bol teşhis logu
     içeriyor ve her adımda hata olursa None döner, sistem çökmez."""
@@ -1951,7 +1951,7 @@ def compute_weekly_vp_signals(ticker, current_price):
     """Son 3 TAMAMLANMIŞ hafta için haftalık Volume Profile hesaplar.
     Döndürür: (weekly_vp_trend_score, weekly_vp_level_score) — ikisi de None
     olabilir (veri yoksa/yetersizse)."""
-    bars = fetch_intraday_bars(ticker, period="1ay", interval="15m")
+    bars = fetch_intraday_bars(ticker, period="1mo", interval="15m")
     if bars is None or len(bars) < 30:
         return None, None
 
@@ -2032,7 +2032,7 @@ def compute_daily_pbd_signal(ticker):
     Basitleştirilmiş yaklaşım: günün VWAP'ının, günün High-Low aralığındaki
     GÖRECELİ konumunu kullanır (0=Low, 1=High). >=0.6 -> P (üstte
     yoğunlaşma), <=0.4 -> b (altta yoğunlaşma), arası -> D (dengeli)."""
-    bars = fetch_intraday_bars(ticker, period="5g", interval="1h")
+    bars = fetch_intraday_bars(ticker, period="5d", interval="1h")
     if bars is None or bars.empty:
         return None
 
@@ -2077,11 +2077,14 @@ def compute_daily_pbd_signal(ticker):
 
 
 def compute_technical_score(ticker, current_price, return_20d=None, return_60d=None):
-    """Bir hisse için 9 teknik bileşeni hesaplar, kullanılabilenleri
-    TECH_SUB_WEIGHTS ile ağırlıklandırıp 0-100 ölçeğine (50=nötr) çevirir.
-    Hesaplanamayan bileşenler dışlanır, kalan ağırlıklar yeniden normalize
-    edilir — bu yüzden borsapy/intraday veri gelmese bile sistem (sadece
-    günlük veriye dayanan bileşenlerle) çalışmaya devam eder."""
+    """Bir hisse için 9 teknik bileşeni hesaplar ve 0-100 teknik skor üretir.
+
+    ÖNEMLİ: Eksik sinyaller artık kalan ağırlıkları yapay biçimde %100'e
+    büyütmez. Önce mevcut sinyaller kendi içinde yön skoru üretir, ardından
+    bu skor toplam *veri kapsaması* kadar 50 (nötr) seviyesine doğru küçülür.
+    Böylece örneğin 9 sinyalden yalnızca 3'ü mevcutken üçü de +1 diye skorun
+    doğrudan 100'e yapışması engellenir.
+    """
     daily_df = fetch_daily_series_isy(ticker)
     today = datetime.now(TR_TZ).date()
 
@@ -2105,17 +2108,46 @@ def compute_technical_score(ticker, current_price, return_20d=None, return_60d=N
         raw["daily_pbd_shape"] = None
 
     available = {k: v for k, v in raw.items() if v is not None}
+    total_possible_weight = sum(TECH_SUB_WEIGHTS.values())
+    available_weight = sum(TECH_SUB_WEIGHTS[k] for k in available)
+    coverage = (available_weight / total_possible_weight) if total_possible_weight > 0 else 0.0
+
     if not available:
-        return 50.0, raw   # tamamen veri yoksa tam nötr
+        technical_score = 50.0
+        raw_score = 50.0
+    else:
+        # Mevcut sinyallerin kendi içindeki yön skoru (-1..+1).
+        combined_z_available = sum(
+            TECH_SUB_WEIGHTS[k] * (v / TECH_SUB_MAX_ABS[k]) for k, v in available.items()
+        ) / available_weight
 
-    total_weight = sum(TECH_SUB_WEIGHTS[k] for k in available)
-    combined_z = sum(
-        TECH_SUB_WEIGHTS[k] * (v / TECH_SUB_MAX_ABS[k]) for k, v in available.items()
-    ) / total_weight
+        raw_score = 50.0 + 50.0 * combined_z_available
 
-    technical_score = 50.0 + 50.0 * combined_z
-    technical_score = max(0.0, min(100.0, technical_score))
-    return technical_score, raw
+        # Eksik veri varsa aşırı skoru nötre doğru küçült.
+        # coverage=1.00 -> ham skor aynen kalır
+        # coverage=0.40 -> ham sapmanın yalnızca %40'ı skora yansır
+        shrunk_z = combined_z_available * coverage
+        technical_score = 50.0 + 50.0 * shrunk_z
+        technical_score = max(0.0, min(100.0, technical_score))
+
+    # Claude ile kaldığımız teşhis adımı: 9 sinyalin tamamını tek satırda gör.
+    def _dbg(v):
+        return "N/A" if v is None else f"{float(v):+.2f}"
+
+    ordered_debug = " | ".join(f"{k}={_dbg(raw.get(k))}" for k in TECH_SUB_WEIGHTS)
+    print(
+        f"  [TEKNİK-ÖZET {ticker}] {ordered_debug} | "
+        f"mevcut={len(available)}/9 | coverage=%{coverage * 100:.0f} | "
+        f"ham={raw_score:.1f} | düzeltilmiş={technical_score:.1f}"
+    )
+
+    meta = {
+        "available_signals": len(available),
+        "total_signals": len(TECH_SUB_WEIGHTS),
+        "coverage": round(coverage, 4),
+        "raw_score_before_coverage": round(raw_score, 2),
+    }
+    return technical_score, raw, meta
 
 
 def round2_deep_analysis(candidates_df):
@@ -2386,12 +2418,14 @@ def main():
 
     print("Teknik Analiz Katmanı: 22 finalist için hesaplanıyor (fundamental %70 + teknik %30)...")
     for item in analyzed:
-        tech_score, tech_raw = compute_technical_score(
+        tech_score, tech_raw, tech_meta = compute_technical_score(
             item["ticker"], item.get("price"),
             return_20d=item.get("_return_20d"), return_60d=item.get("_return_60d"),
         )
         item["technical_score"] = round(tech_score, 1)
         item["technical_components"] = tech_raw
+        item["technical_coverage"] = tech_meta["coverage"]
+        item["technical_available_signals"] = tech_meta["available_signals"]
         item["combined_score"] = round(
             item.get("alpha_score", 0) * TECH_FUNDAMENTAL_WEIGHT + tech_score * TECH_TECHNICAL_WEIGHT, 1
         )
@@ -2423,6 +2457,8 @@ def main():
             "ticker": r["ticker"], "rank": r["rank"],
             "alpha_score": r.get("alpha_score"),
             "technical_score": r.get("technical_score"), "combined_score": r.get("combined_score"),
+            "technical_coverage": r.get("technical_coverage"),
+            "technical_available_signals": r.get("technical_available_signals"),
             "bear_fv": r.get("bear_fv"), "base_fv": r.get("base_fv"), "bull_fv": r.get("bull_fv"),
             "verdict": r.get("verdict"),
         }
