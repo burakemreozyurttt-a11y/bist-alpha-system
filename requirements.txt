@@ -7,3 +7,4 @@ pykap==0.2.0
 pypdf==5.9.0
 beautifulsoup4==4.12.3
 html5lib==1.1
+borsapy==0.11.0
