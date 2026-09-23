@@ -1287,18 +1287,20 @@ Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
 """
 
 BULL_PROMPT_TEMPLATE = """
-Sen bir BIST Boğa (Bull) Analistisin. Görevin SADECE şu şirketin büyüme
-potansiyelini, olası katalizörlerini ve en iyi senaryoyu olabildiğince güçlü
-savunmak. Şirketin risklerini bu analizde ELE ALMA — görevin iyimser tarafı
-zorlamak.
+Sen bir BIST Boğa (Bull) Analistisin. Görevin şirket için EN İYİ MAKUL
+senaryoyu kurmaktır; ancak iyimser olmak serbest tahmin yapmak anlamına gelmez.
+Bull-case mutlaka verilen finansal veriye ve ölçülebilir/izlenebilir katalizörlere
+dayanmalıdır.
 
-Özellikle şunlara dikkat et: büyümede hızlanma (pozitif ivmelenme), marj
-genişlemesi, borç azalması (deleveraging), güçlü kâr kalitesi ve
-"temeller güçlü ama fiyat henüz tepki vermemiş" durumu (yani yüksek
-divergence skoru = piyasa bu iyileşmeyi henüz fiyatlamamış olabilir).
-Faaliyet raporundan alıntılar varsa, yönetimin büyüme hedeflerini, yeni
-yatırım/kapasite planlarını veya sipariş/backlog bilgilerini katalizör
-olarak kullanabilirsin.
+ÖNEMLİ DEĞERLEME KURALI:
+- Sırf hisse fiyatı yükseldi diye Bull FV yükseltme.
+- Bir haber/katalizörün yalnızca var olması Bull FV üretmek için yeterli değildir.
+- Bull FV ancak katalizörün gelir, kâr, marj, nakit akışı, bilanço, kapasite,
+  sipariş/backlog veya değerleme çarpanına etkisi makul şekilde modellenebiliyorsa
+  verilebilir.
+- Destek zayıfsa veya yalnızca hikâye düzeyindeyse bull_fv=null döndür.
+- Bull FV, "fiyatın gidebileceği yer" değil; şartları açıkça tanımlanmış destekli
+  bir iyimser adil değer senaryosudur.
 
 Bilmediğin/verilmeyen bilgiyi UYDURMA, "N/A" ise o konuda yorum yapma.
 
@@ -1306,35 +1308,48 @@ Bilmediğin/verilmeyen bilgiyi UYDURMA, "N/A" ise o konuda yorum yapma.
 
 Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
 {{
-  "bull_case": "<2-3 cümlelik Türkçe, en iyi senaryo argümanı>",
+  "bull_case": "<2-3 cümlelik Türkçe, destekli iyimser senaryo>",
   "catalysts": ["<katalizör 1>", "<katalizör 2>"],
-  "growth_conviction": <0-100 arası tam sayı, büyüme tezine olan kanaat gücü>,
-  "bull_fv": <TL cinsinden iyimser adil değer, sayı>
+  "growth_conviction": <0-100 arası tam sayı>,
+  "bull_fv_supported": <true | false>,
+  "bull_fv_evidence": ["<ölçülebilir destek 1>", "<ölçülebilir destek 2>"],
+  "bull_fv": <destek varsa TL sayı, destek yoksa null>
 }}
 """
 
 CRO_PROMPT_TEMPLATE = """
 Sen bir Chief Risk Officer'sın (Yönetici Risk Sorumlusu). Aynı şirket için
-Ayı ve Boğa analistlerinin ürettiği ZIT argümanlar aşağıda veriliyor.
-Görevin: ikisini tarafsızca çarpıştırmak, hangi argümanın veriyle daha
-tutarlı olduğuna karar vermek, çelişkileri tespit etmek ve dengeli, nihai
-bir karar vermek. Tek bir tarafı kayırma; ikna edici olan neyse ona göre
-karar ver.
+Ayı ve Boğa analistlerinin zıt argümanlarını tarafsız biçimde tart.
 
-DEĞERLEME DİSİPLİNİ — ÇOK ÖNEMLİ:
-- Base FV'yi mevcut piyasa fiyatını takip edecek şekilde mekanik olarak yukarı
-  taşıma. Adil değer; kârlılık, büyüme, bilanço, nakit akışı, çarpanlar ve
-  doğrulanabilir katalizörlerdeki değişimle gerekçelendirilmelidir.
-- Mevcut fiyat Base FV'ye ulaşmış veya onu aşmışsa, şirketi sıfırdan yeniden
-  değerlendir. Yeni veriler gerçekten daha yüksek bir ana senaryoyu
-  destekliyorsa Base FV'yi revize et; desteklemiyorsa eski/uygun adil değeri
-  koru. Sistem daha sonra bu şirketi fırsat listesinden çıkaracaktır.
-- Bull FV tek başına fırsat sayılmaz. Ana fırsat değerlendirmesinde Base FV
-  esas alınır.
-- Alpha puanını verirken yalnızca şirket kalitesini değil, mevcut fiyatta
-  kalan makul değerleme alanını da dikkate al. İyi şirket ile iyi fırsat aynı
-  şey değildir.
+SİSTEMİN ANA AMACI:
+İyi şirketleri değil, FUNDAMENTAL OLARAK HÂLÂ FİYATLANMAMIŞ fırsatları bulmak.
+Teknik görünüm daha sonra sıralamaya yardımcı olur; değerleme açığı yaratamaz.
 
+DEĞERLEME DİSİPLİNİ — KESİN KURALLAR:
+1) Fiyatın eski Base FV'ye yaklaşması/ulaşması, Base FV'yi yükseltmek için ASLA
+   gerekçe değildir.
+2) Base FV yalnızca yeni ve maddi fundamental kanıtla yukarı revize edilebilir:
+   ör. raporlanan gelir/kâr gücü, marj genişlemesi, nakit akışı kalitesi,
+   borç azalması, kapasite/siparişin finansallara ölçülebilir katkısı veya
+   güvenilir ve nicel yeni guidance.
+3) Katalizörün duyurulmuş olması tek başına Base revizyonu değildir. Etki henüz
+   gerçekleşmemiş ama ölçülebilir ise yalnızca Upside/Bull senaryosunda kalmalıdır.
+4) Önceki taramadaki aynı fundamental veri setiyle yeni günde Base FV'yi tekrar
+   yukarı taşıma. Base revizyonu için önceki analize göre YENİ kanıt gerekir.
+5) Upside/Bull FV ancak açık, ölçülebilir ve veriye dayanan bull-case desteği varsa
+   gösterilebilir. Destek yoksa bull_fv=null olmalıdır.
+6) Bull FV gelecekteki otomatik yeni Base değildir. Bull senaryosunun şartları
+   gerçekleşmeye başlarsa ancak o zaman yeni analizde Base'e kısmen/tamamen
+   taşınabilir.
+7) Güncel fiyat Base FV'yi fiyatlamışsa ve yeni fundamental kanıt yoksa Base'i
+   koru; sistem şirketi fırsat listesinden çıkaracaktır.
+8) Alpha puanında şirket kalitesi ile mevcut fiyatta kalan değerleme alanını
+   ayır. İyi şirket ile iyi fırsat aynı şey değildir.
+
+ÖNCEKİ ANALİZ HAFIZASI:
+{previous_valuation_block}
+
+GÜNCEL VERİ:
 {data_block}
 
 --- AYI ANALİSTİNİN GÖRÜŞÜ ---
@@ -1347,16 +1362,22 @@ Bear FV: {bear_fv}
 {bull_case}
 Katalizörler: {catalysts}
 Büyüme Kanaati: {growth_conviction}/100
+Bull FV desteği: {bull_fv_supported}
+Bull FV kanıtı: {bull_fv_evidence}
 Bull FV: {bull_fv}
 
 Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
 {{
-  "alpha_score": <0-100 arası tam sayı, iki tarafı tarttıktan sonra nihai cazibe puanı>,
-  "data_confidence": <0-100 arası tam sayı, verinin güvenilirliği/tamlığı>,
-  "bear_fv": <TL, ayı analistinin değerine katılıyorsan aynen, katılmıyorsan düzeltilmiş hali>,
-  "base_fv": <TL, senin ana senaryo (dengelenmiş) adil değerin>,
-  "bull_fv": <TL, boğa analistinin değerine katılıyorsan aynen, katılmıyorsan düzeltilmiş hali>,
-  "thesis_summary": "<2-3 cümlelik Türkçe, iki tarafı da yansıtan dengeli sentez>",
+  "alpha_score": <0-100 arası tam sayı>,
+  "data_confidence": <0-100 arası tam sayı>,
+  "bear_fv": <TL sayı>,
+  "base_fv": <TL sayı>,
+  "bull_fv": <destekli ise TL sayı, aksi halde null>,
+  "base_revision_status": "UNCHANGED | SUPPORTED_BY_NEW_FUNDAMENTALS | LOWERED",
+  "base_revision_evidence": ["<önceki analize göre yeni ve maddi kanıtlar>"],
+  "upside_case_status": "SUPPORTED | UNSUPPORTED",
+  "upside_evidence": ["<Bull FV'yi destekleyen ölçülebilir kanıtlar>"],
+  "thesis_summary": "<2-3 cümlelik dengeli sentez>",
   "catalysts": ["<en inandırıcı katalizör(ler)>"],
   "risks": ["<en inandırıcı risk(ler)>"],
   "verdict": "<HIGH CONVICTION | ATTRACTIVE | WATCH | WEAKENING içinden biri>"
@@ -1403,7 +1424,110 @@ def _call_gemini_json(prompt, label):
     return None
 
 
-def analyze_with_gemini(candidate):
+def _previous_valuation_block(prev):
+    if not prev:
+        return "Önceki analiz yok; ilk değerleme. Fiyatı referans alarak FV üretme."
+    fields = [
+        ("Önceki fiyat", "price"), ("Önceki Base FV", "base_fv"),
+        ("Önceki Bull FV", "bull_fv"), ("Önceki Alpha", "alpha_score"),
+        ("Ciro büyümesi", "revenue_growth"), ("Kâr büyümesi", "earnings_growth"),
+        ("Ciro ivmesi", "revenue_acceleration"), ("Kâr ivmesi", "earnings_acceleration"),
+        ("Brüt marj trendi", "gross_margin_trend"), ("Faaliyet marj trendi", "operating_margin_trend"),
+        ("ROE", "roe"), ("Net borç/özkaynak", "net_debt_to_equity"),
+        ("CFO/Net kâr", "cfo_to_net_income"),
+    ]
+    return "\n".join(f"- {label}: {prev.get(key, 'N/A')}" for label, key in fields)
+
+
+def _material_fundamental_change(candidate, prev):
+    """Aynı veriyle her gün Base FV yukarı ratchet edilmesini engeller.
+    Önceki state'teki temel metriklerle güncel aday arasında anlamlı fark arar.
+    İlk analizde (hafıza yoksa) True döner; sonraki analizlerde yeni kanıt gerekir.
+    """
+    if not prev:
+        return True, ["ilk değerleme"]
+
+    # V5.12'ye geçişte eski state kayıtlarında aşağıdaki temel metrikler yoksa
+    # bir defaya mahsus baz çizgisi kurulmasına izin ver. Sonraki taramalarda
+    # bu metrikler state'e kaydedildiği için aynı veriyle ratchet yapılamaz.
+    tracked_keys = [
+        "revenue_growth", "earnings_growth", "revenue_acceleration",
+        "earnings_acceleration", "gross_margin_trend", "operating_margin_trend",
+        "roe", "net_debt_to_equity", "cfo_to_net_income",
+    ]
+    if not any(_safe_float(prev.get(k)) is not None for k in tracked_keys):
+        return True, ["önceki state'te fundamental baz çizgisi yok; V5.12 geçiş kaydı"]
+
+    checks = [
+        ("revenue_growth", 0.05, "ciro büyümesi"),
+        ("earnings_growth", 0.08, "kâr büyümesi"),
+        ("revenue_acceleration", 0.05, "ciro ivmesi"),
+        ("earnings_acceleration", 0.08, "kâr ivmesi"),
+        ("gross_margin_trend", 0.01, "brüt marj trendi"),
+        ("operating_margin_trend", 0.01, "faaliyet marj trendi"),
+        ("roe", 0.02, "ROE"),
+        ("net_debt_to_equity", 0.10, "net borç/özkaynak"),
+        ("cfo_to_net_income", 0.20, "nakit akışı kalitesi"),
+    ]
+    changes = []
+    for key, threshold, label in checks:
+        cur = _safe_float(candidate.get(key))
+        old = _safe_float(prev.get(key))
+        if cur is not None and old is not None and abs(cur - old) >= threshold:
+            changes.append(f"{label}: {old:.3f} -> {cur:.3f}")
+    return bool(changes), changes
+
+
+def _validate_valuation_output(cro, candidate, prev, ticker, bull=None):
+    """LLM çıktısına deterministik değerleme disiplini uygular."""
+    prev_base = _safe_float((prev or {}).get("base_fv"))
+    new_base = _safe_float(cro.get("base_fv"))
+    status = str(cro.get("base_revision_status", "UNCHANGED")).upper()
+    material_change, changes = _material_fundamental_change(candidate, prev)
+
+    if prev_base and new_base and new_base > prev_base * 1.03:
+        supported = status == "SUPPORTED_BY_NEW_FUNDAMENTALS" and material_change
+        if not supported:
+            print(
+                f"  [FV-DİSİPLİN {ticker}] Base artışı reddedildi: "
+                f"{prev_base:.2f} -> {new_base:.2f}. Yeni maddi fundamental kanıt yok."
+            )
+            cro["base_fv"] = prev_base
+            cro["base_revision_status"] = "UNCHANGED"
+            cro["base_revision_evidence"] = []
+        else:
+            print(
+                f"  [FV-DİSİPLİN {ticker}] Base revizyonu kabul: "
+                f"{prev_base:.2f} -> {new_base:.2f} | yeni kanıt: {'; '.join(changes)}"
+            )
+
+    # Upside sadece destekli bull-case varsa görünür.
+    upside_status = str(cro.get("upside_case_status", "UNSUPPORTED")).upper()
+    evidence = cro.get("upside_evidence") or []
+    bull_agent_supported = bool((bull or {}).get("bull_fv_supported"))
+    bull_agent_evidence = (bull or {}).get("bull_fv_evidence") or []
+    bull_fv = _safe_float(cro.get("bull_fv"))
+    base_fv = _safe_float(cro.get("base_fv"))
+    if (
+        upside_status != "SUPPORTED"
+        or not evidence
+        or not bull_agent_supported
+        or not bull_agent_evidence
+        or bull_fv is None
+        or (base_fv and bull_fv <= base_fv)
+    ):
+        if bull_fv is not None:
+            print(f"  [FV-DİSİPLİN {ticker}] Upside FV kaldırıldı: destekli/ölçülebilir bull-case doğrulanmadı.")
+        cro["bull_fv"] = None
+        cro["upside_case_status"] = "UNSUPPORTED"
+        cro["upside_evidence"] = []
+
+    cro["fundamental_change_detected"] = material_change
+    cro["fundamental_change_evidence"] = changes
+    return cro
+
+
+def analyze_with_gemini(candidate, prev_snapshot=None):
     """Bear -> Bull -> CRO üç aşamalı analiz zinciri. Herhangi bir aşama
     başarısız olursa (tüm modeller tükenirse) None döner, o hisse atlanır."""
     data_block = DATA_BLOCK_TEMPLATE.format(**candidate)
@@ -1427,14 +1551,19 @@ def analyze_with_gemini(candidate):
         key_risks=", ".join(bear.get("key_risks", []) or []) or "N/A",
         value_trap_risk=bear.get("value_trap_risk", "N/A"),
         bear_fv=bear.get("bear_fv", "N/A"),
+        previous_valuation_block=_previous_valuation_block(prev_snapshot),
         bull_case=bull.get("bull_case", "N/A"),
         catalysts=", ".join(bull.get("catalysts", []) or []) or "N/A",
         growth_conviction=bull.get("growth_conviction", "N/A"),
+        bull_fv_supported=bull.get("bull_fv_supported", False),
+        bull_fv_evidence="; ".join(bull.get("bull_fv_evidence", []) or []) or "N/A",
         bull_fv=bull.get("bull_fv", "N/A"),
     )
     cro = _call_gemini_json(cro_prompt, f"{ticker}-CRO")
     if cro is None:
         return None
+
+    cro = _validate_valuation_output(cro, candidate, prev_snapshot, ticker, bull=bull)
 
     cro["ticker"] = candidate["ticker"]
     cro["name"] = candidate["name"]
@@ -2167,7 +2296,7 @@ def compute_technical_score(ticker, current_price, return_20d=None, return_60d=N
     return technical_score, raw, meta
 
 
-def round2_deep_analysis(candidates_df):
+def round2_deep_analysis(candidates_df, last_seen_map=None):
     results = []
     records = candidates_df.to_dict("records")
     report_cache = load_report_cache()
@@ -2187,7 +2316,7 @@ def round2_deep_analysis(candidates_df):
             report_excerpt, report_period = None, None
 
         candidate = _build_candidate_for_agents(row, report_excerpt, report_period)
-        result = analyze_with_gemini(candidate)
+        result = analyze_with_gemini(candidate, (last_seen_map or {}).get(ticker))
         if result:
             # Data Confidence LLM'in tek başına 100 vermesine bırakılmıyor.
             # Sayısal veri tamlığı ve kullanılan kaynak katmanı ile tavan uygulanır.
@@ -2525,13 +2654,20 @@ def main():
         send_telegram_message("⚠️ Bugün likidite/veri filtresinden geçen hisse bulunamadı.")
         return
 
+    # Değerleme hafızasını Gemini analizinden ÖNCE yükle. Böylece aynı veriyle
+    # Base FV'nin her gün fiyatı takip ederek yukarı taşınması engellenebilir.
+    today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
+    full_history = load_full_history()
+    last_seen_map = build_last_seen_map(full_history, exclude_date=today_str)
+    previous_day_top10_map = build_previous_day_top10_map(full_history, exclude_date=today_str)
+
     print(f"Round 2: {len(candidates_df)} aday için Gemini analizi başlıyor...")
     if "cap_bucket" in candidates_df.columns:
         cap_counts = candidates_df["cap_bucket"].value_counts().to_dict()
         print("[ÖLÇEK-DAĞILIMI ROUND2] " + " | ".join(
             f"{bucket}={cap_counts.get(bucket, 0)}" for bucket in ["Büyük", "Orta", "Küçük"]
         ))
-    analyzed = round2_deep_analysis(candidates_df)
+    analyzed = round2_deep_analysis(candidates_df, last_seen_map=last_seen_map)
     if not analyzed:
         send_telegram_message("⚠️ Gemini analizinden sonuç alınamadı, lütfen logları kontrol et.")
         return
@@ -2562,11 +2698,6 @@ def main():
     print("[ÖLÇEK-DAĞILIMI TOP10] " + " | ".join(
         f"{bucket}={top10_cap_counts.get(bucket, 0)}" for bucket in ["Büyük", "Orta", "Küçük"]
     ))
-
-    today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
-    full_history = load_full_history()
-    last_seen_map = build_last_seen_map(full_history, exclude_date=today_str)
-    previous_day_top10_map = build_previous_day_top10_map(full_history, exclude_date=today_str)
 
     report = build_report(
         ranked,
@@ -2606,7 +2737,21 @@ def main():
             "base_upside_pct": r.get("base_upside_pct"),
             "quality_eligible": r.get("quality_eligible"),
             "top3_eligible": r.get("top3_eligible"),
+            "price": r.get("price"),
             "bear_fv": r.get("bear_fv"), "base_fv": r.get("base_fv"), "bull_fv": r.get("bull_fv"),
+            "base_revision_status": r.get("base_revision_status"),
+            "base_revision_evidence": r.get("base_revision_evidence"),
+            "upside_case_status": r.get("upside_case_status"),
+            "upside_evidence": r.get("upside_evidence"),
+            "revenue_growth": r.get("revenue_growth"),
+            "earnings_growth": r.get("earnings_growth"),
+            "revenue_acceleration": r.get("revenue_acceleration"),
+            "earnings_acceleration": r.get("earnings_acceleration"),
+            "gross_margin_trend": r.get("gross_margin_trend"),
+            "operating_margin_trend": r.get("operating_margin_trend"),
+            "roe": r.get("roe"),
+            "net_debt_to_equity": r.get("net_debt_to_equity"),
+            "cfo_to_net_income": r.get("cfo_to_net_income"),
             "verdict": r.get("verdict"),
         }
         for r in ranked[:15]
