@@ -2436,37 +2436,76 @@ def save_state(ranking):
 
 
 # --------------------------------------------------------------------------
-# V5.13 — THESIS LIFECYCLE / STICKY FOLLOW-UP SLOTS
+# V5.14 — CASE-BASED THESIS LIFECYCLE + HISTORICAL DATA
 # --------------------------------------------------------------------------
-FOLLOWUP_STATE_FILE = os.path.join(os.path.dirname(__file__), "followup_state.json")
-FOLLOWUP_MAX_PER_BLOCK = 3
-FOLLOWUP_QUEUE_MAX_PER_BLOCK = 3
+# Ana ilke:
+# - TOP10'a her YENİ giriş yeni bir case açar.
+# - TOP10'dan doğal çıkış, aktif case'i kapatır ve history'ye taşır.
+# - Aynı ticker tekrar TOP10'a girerse eski case devam ETMEZ; yeni case açılır.
+# - %8 Base eşiği TOP10'dan atma kuralı değildir. Sadece APPROACHING_BASE etiketi.
+# - Base'e ulaşan ve destekli bull-case'i olan case aynı yaşam döngüsünde
+#   BULL_CASE_WATCH'a geçebilir. Bull-case bittiğinde case kapanır.
+# - İstatistik için her aktif case'in günlük snapshot'ı ayrı dosyada tutulur.
+ACTIVE_CASES_FILE = os.path.join(os.path.dirname(__file__), "active_cases.json")
+CASE_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "case_history.json")
+CASE_DAILY_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "case_daily_history.json")
+
 APPROACHING_ENTRY_PCT = 8.0
-ACTIVE_RETURN_PCT = 12.0
-RETURN_CONFIRM_SCANS = 2
 UPSIDE_WATCH_MIN_GAP_PCT = 8.0
+FOLLOWUP_MAX_PER_BLOCK = 3
 FOLLOWUP_MIN_FUNDAMENTAL = 55.0
 FOLLOWUP_MIN_FINAL_ALPHA = 45.0
 
 
-def load_followup_state():
-    if os.path.exists(FOLLOWUP_STATE_FILE):
-        try:
-            with open(FOLLOWUP_STATE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            data.setdefault("records", {})
-            data.setdefault("approaching_slots", [])
-            data.setdefault("bull_slots", [])
-            return data
-        except Exception as e:
-            print(f"[TAKİP] followup_state okunamadı: {e}")
-    return {"updated_at": None, "records": {}, "approaching_slots": [], "bull_slots": []}
+def _load_json_file(path, default):
+    if not os.path.exists(path):
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+    except Exception as e:
+        print(f"[CASE] {os.path.basename(path)} okunamadı: {e}")
+        return default
 
 
-def save_followup_state(state):
-    state["updated_at"] = datetime.now(TR_TZ).strftime("%Y-%m-%d")
-    with open(FOLLOWUP_STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
+def load_case_store():
+    active = _load_json_file(ACTIVE_CASES_FILE, {"updated_at": None, "cases": {}})
+    history = _load_json_file(CASE_HISTORY_FILE, {"updated_at": None, "closed_cases": []})
+    daily = _load_json_file(CASE_DAILY_HISTORY_FILE, {"updated_at": None, "cases": {}})
+    active.setdefault("cases", {})
+    history.setdefault("closed_cases", [])
+    daily.setdefault("cases", {})
+    return active, history, daily
+
+
+def save_case_store(active, history, daily):
+    today = datetime.now(TR_TZ).strftime("%Y-%m-%d")
+    active["updated_at"] = today
+    history["updated_at"] = today
+    daily["updated_at"] = today
+    for path, payload in [
+        (ACTIVE_CASES_FILE, active),
+        (CASE_HISTORY_FILE, history),
+        (CASE_DAILY_HISTORY_FILE, daily),
+    ]:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _case_sequence_for_ticker(ticker, active, history):
+    seqs = []
+    for rec in active.get("cases", {}).values():
+        if rec.get("ticker") == ticker:
+            seqs.append(int(rec.get("case_seq", 0) or 0))
+    for rec in history.get("closed_cases", []):
+        if rec.get("ticker") == ticker:
+            seqs.append(int(rec.get("case_seq", 0) or 0))
+    return (max(seqs) if seqs else 0) + 1
+
+
+def _make_case_id(ticker, today, seq):
+    return f"{ticker}-{today.replace('-', '')}-{seq:02d}"
 
 
 def _bull_watch_supported(item):
@@ -2483,22 +2522,7 @@ def _bull_watch_supported(item):
     return supported, gap
 
 
-def _followup_priority(rec):
-    """Sadece BOŞ slotu doldururken kullanılır; mevcut slotu yerinden etmez."""
-    alpha = _safe_float(rec.get("alpha_score")) or 0.0
-    fundamental = _safe_float(rec.get("fundamental_score")) or 0.0
-    status = rec.get("status")
-    if status == "APPROACHING_BASE":
-        gap = max(0.0, _safe_float(rec.get("base_upside_pct")) or 0.0)
-        proximity_bonus = max(0.0, 8.0 - gap) * 1.5
-        return alpha + 0.20 * fundamental + proximity_bonus
-    if status == "BULL_CASE_WATCH":
-        bull_gap = max(0.0, _safe_float(rec.get("bull_upside_pct")) or 0.0)
-        return alpha + 0.20 * fundamental + min(bull_gap, 30.0) * 0.20
-    return alpha
-
-
-def _copy_followup_metrics(rec, item):
+def _copy_case_metrics(rec, item):
     keys = [
         "alpha_score", "fundamental_score", "technical_score", "data_confidence",
         "price", "bear_fv", "base_fv", "bull_fv", "base_upside_pct",
@@ -2521,79 +2545,118 @@ def _copy_followup_metrics(rec, item):
     return rec
 
 
-def _seed_record(ticker, item, today):
-    price = _safe_float(item.get("price"))
-    base = _safe_float(item.get("base_fv"))
-    bull = _safe_float(item.get("bull_fv"))
+def _new_case(ticker, item, rank, active, history, today):
+    seq = _case_sequence_for_ticker(ticker, active, history)
+    case_id = _make_case_id(ticker, today, seq)
+    gap = _safe_float(item.get("base_upside_pct"))
+    status = "APPROACHING_BASE" if gap is not None and 0 < gap < APPROACHING_ENTRY_PCT else "ACTIVE_OPPORTUNITY"
     rec = {
+        "case_id": case_id,
+        "case_seq": seq,
         "ticker": ticker,
-        "status": "ACTIVE_OPPORTUNITY",
-        "first_seen_date": today,
-        "first_seen_price": price,
-        "initial_base_fv": base,
-        "initial_bull_fv": bull,
-        "last_status_change": today,
-        "return_streak": 0,
+        "status": status,
+        "entry_date": today,
+        "entry_price": _safe_float(item.get("price")),
+        "entry_rank": rank,
+        "entry_alpha": _safe_float(item.get("alpha_score")),
+        "entry_fundamental": _safe_float(item.get("fundamental_score")),
+        "entry_technical": _safe_float(item.get("technical_score")),
+        "entry_bear_fv": _safe_float(item.get("bear_fv")),
+        "entry_base_fv": _safe_float(item.get("base_fv")),
+        "entry_bull_fv": _safe_float(item.get("bull_fv")),
+        "last_seen_date": today,
+        "last_rank": rank,
         "days_tracked": 0,
         "base_reached_date": None,
+        "base_reached_price": None,
+        "max_price": _safe_float(item.get("price")),
+        "min_price": _safe_float(item.get("price")),
+        "max_alpha": _safe_float(item.get("alpha_score")),
+        "min_base_gap_pct": gap,
+        "top10_exit_date": None,
+        "close_date": None,
+        "close_reason": None,
     }
-    return _copy_followup_metrics(rec, item)
-
-
-def _set_status(rec, status, today):
-    if rec.get("status") != status:
-        print(f"  [TEZ-DURUM {rec.get('ticker')}] {rec.get('status')} -> {status}")
-        rec["status"] = status
-        rec["last_status_change"] = today
-        rec["return_streak"] = 0
+    _copy_case_metrics(rec, item)
+    active["cases"][ticker] = rec
+    print(f"  [CASE-AÇILDI {ticker}] {case_id} | giriş fiyat={rec.get('entry_price')} | rank=#{rank} | status={status}")
     return rec
 
 
-def _sync_sticky_slots(state, key, target_status):
-    """Mevcut slot korunur. Yeni aday yalnızca boş slotu doldurur."""
-    records = state["records"]
-    old = state.get(key, [])
-    kept = []
-    for tk in old:
-        if tk in records and records[tk].get("status") == target_status and tk not in kept:
-            kept.append(tk)
-    vacancies = FOLLOWUP_MAX_PER_BLOCK - len(kept)
-    if vacancies > 0:
-        waiting = [
-            r for tk, r in records.items()
-            if r.get("status") == target_status and tk not in kept
-        ]
-        waiting.sort(key=_followup_priority, reverse=True)
-        kept.extend([r["ticker"] for r in waiting[:vacancies]])
-    state[key] = kept[:FOLLOWUP_MAX_PER_BLOCK]
+def _close_case(ticker, active, history, today, reason, item=None):
+    rec = active.get("cases", {}).get(ticker)
+    if not rec:
+        return
+    if item:
+        _copy_case_metrics(rec, item)
+    rec["close_date"] = today
+    rec["close_reason"] = reason
+    rec["exit_price"] = _safe_float((item or {}).get("price"), _safe_float(rec.get("price")))
+    rec["exit_rank"] = (item or {}).get("rank")
+    entry_price = _safe_float(rec.get("entry_price"))
+    exit_price = _safe_float(rec.get("exit_price"))
+    rec["case_return_pct"] = round((exit_price / entry_price - 1.0) * 100.0, 2) if entry_price and exit_price else None
+    rec["outcome"] = (
+        "BASE_REACHED" if rec.get("base_reached_date") else
+        "POSITIVE_EXIT" if (rec.get("case_return_pct") or 0) > 0 else
+        "NEGATIVE_EXIT" if rec.get("case_return_pct") is not None else
+        "CLOSED"
+    )
+    history.setdefault("closed_cases", []).append(dict(rec))
+    active["cases"].pop(ticker, None)
+    print(f"  [CASE-KAPANDI {ticker}] {rec.get('case_id')} | neden={reason} | getiri=%{rec.get('case_return_pct')}")
 
 
-def _prune_followup_queue(state, status, slot_key):
-    """Görünmeyen kuyruğu sınırlı tut; Gemini takip maliyeti kontrolsüz büyümesin."""
-    records = state["records"]
-    visible = set(state.get(slot_key, []))
-    queued = [
-        r for tk, r in records.items()
-        if r.get("status") == status and tk not in visible
-    ]
-    queued.sort(key=_followup_priority, reverse=True)
-    keep_queue = {r["ticker"] for r in queued[:FOLLOWUP_QUEUE_MAX_PER_BLOCK]}
-    for r in queued[FOLLOWUP_QUEUE_MAX_PER_BLOCK:]:
-        r["status"] = "FOLLOWUP_ARCHIVED"
-        r["archive_reason"] = "takip kuyruğu kapasitesi"
+def _append_daily_snapshot(daily, rec, item, rank, today):
+    case_id = rec["case_id"]
+    price = _safe_float(item.get("price"))
+    entry_price = _safe_float(rec.get("entry_price"))
+    snapshot = {
+        "date": today,
+        "ticker": rec.get("ticker"),
+        "case_id": case_id,
+        "case_seq": rec.get("case_seq"),
+        "status": rec.get("status"),
+        "rank": rank,
+        "price": price,
+        "entry_price": entry_price,
+        "case_return_pct": round((price / entry_price - 1.0) * 100.0, 2) if price and entry_price else None,
+        "alpha_score": _safe_float(item.get("alpha_score")),
+        "fundamental_score": _safe_float(item.get("fundamental_score")),
+        "technical_score": _safe_float(item.get("technical_score")),
+        "bear_fv": _safe_float(item.get("bear_fv")),
+        "base_fv": _safe_float(item.get("base_fv")),
+        "bull_fv": _safe_float(item.get("bull_fv")),
+        "base_upside_pct": _safe_float(item.get("base_upside_pct")),
+        "upside_case_status": item.get("upside_case_status"),
+        "base_revision_status": item.get("base_revision_status"),
+        "data_confidence": item.get("data_confidence"),
+        "revenue_growth": _safe_float(item.get("revenue_growth")),
+        "earnings_growth": _safe_float(item.get("earnings_growth")),
+        "revenue_acceleration": _safe_float(item.get("revenue_acceleration")),
+        "earnings_acceleration": _safe_float(item.get("earnings_acceleration")),
+        "gross_margin_trend": _safe_float(item.get("gross_margin_trend")),
+        "operating_margin_trend": _safe_float(item.get("operating_margin_trend")),
+        "roe": _safe_float(item.get("roe")),
+        "net_debt_to_equity": _safe_float(item.get("net_debt_to_equity")),
+        "cfo_to_net_income": _safe_float(item.get("cfo_to_net_income")),
+    }
+    arr = daily.setdefault("cases", {}).setdefault(case_id, [])
+    # Manuel aynı-gün testleri istatistiği şişirmesin: aynı tarih snapshot'ı güncellenir.
+    if arr and arr[-1].get("date") == today:
+        arr[-1] = snapshot
+    else:
+        arr.append(snapshot)
 
 
-def augment_candidates_with_followups(candidates_df, followup_state):
-    """Takip listelerindeki hisseler Round1'in ilk 22'sinden düşse de unutulmasın.
-    Round1 tüm evreni zaten taradığı için güncel tam satırı oradan yeniden ekleriz.
+def augment_candidates_with_active_cases(candidates_df, active_store):
+    """Aktif case'ler Round1 shortlist'inden düşse de günlük yeniden analiz edilir.
+    Özellikle APPROACHING_BASE ve BULL_CASE_WATCH case'lerinin unutulmasını önler.
     """
     global LAST_ROUND1_SCORED_DF
     if LAST_ROUND1_SCORED_DF is None or LAST_ROUND1_SCORED_DF.empty:
         return candidates_df
-    tracked = {
-        tk for tk, rec in followup_state.get("records", {}).items()
-        if rec.get("status") in {"APPROACHING_BASE", "BULL_CASE_WATCH"}
-    }
+    tracked = set(active_store.get("cases", {}).keys())
     if not tracked:
         return candidates_df
     existing = set(candidates_df["ticker"].astype(str))
@@ -2602,114 +2665,142 @@ def augment_candidates_with_followups(candidates_df, followup_state):
     ].copy()
     if add.empty:
         return candidates_df
-    print("[TAKİP] Round2'ye zorunlu takip adayları eklendi: " + ", ".join(add["ticker"].astype(str).tolist()))
+    print("[CASE] Round2'ye aktif case takip adayları eklendi: " + ", ".join(add["ticker"].astype(str).tolist()))
     return pd.concat([candidates_df, add], ignore_index=True).drop_duplicates("ticker", keep="first")
 
 
-def update_thesis_lifecycle(raw_active, excluded, analyzed, state):
-    """Sticky slot + hidden queue + hysteresis kullanan tez yaşam döngüsü."""
+def active_main_case_tickers(active_store):
+    return {
+        tk for tk, rec in active_store.get("cases", {}).items()
+        if rec.get("status") in {"ACTIVE_OPPORTUNITY", "APPROACHING_BASE"}
+    }
+
+
+def update_case_lifecycle(ranked, analyzed, active, history, daily):
+    """TOP10 giriş/çıkışlarını case bazında işler.
+
+    Önemli:
+    - %8'in altına inen hisse TOP10'dan çıkarılmaz; yalnızca APPROACHING_BASE olur.
+    - TOP10'dan doğal sıralama nedeniyle çıkan ACTIVE/APPROACHING case kapanır.
+    - Aynı ticker daha sonra tekrar TOP10'a girerse yeni case açılır.
+    - Base'e ulaşan case destekli bull-case varsa BULL_CASE_WATCH'a geçebilir.
+    """
     today = datetime.now(TR_TZ).strftime("%Y-%m-%d")
-    records = state.setdefault("records", {})
-    item_map = {x.get("ticker"): x for x in analyzed if x.get("ticker")}
+    top10 = ranked[:10]
+    top10_map = {x.get("ticker"): (i, x) for i, x in enumerate(top10, 1) if x.get("ticker")}
+    analyzed_map = {x.get("ticker"): x for x in analyzed if x.get("ticker")}
 
-    # İlk kez aktif keşfedilenleri hafızaya al. İlk 15, kullanıcının gerçek takip evreni.
-    for item in raw_active[:15]:
-        tk = item.get("ticker")
-        if tk and tk not in records:
-            records[tk] = _seed_record(tk, item, today)
+    # 1) Mevcut case'leri güncelle / doğal çıkışları kapat / Base temasını işle.
+    for tk in list(active.get("cases", {}).keys()):
+        rec = active["cases"].get(tk)
+        item = analyzed_map.get(tk)
+        if not rec:
+            continue
+        status = rec.get("status")
 
-    # Base'e çok yaklaşmış güçlü yeni aday da doğrudan takip kuyruğuna girebilir.
-    for item in excluded:
+        if status == "BULL_CASE_WATCH":
+            # Yeni Base revizyonu nedeniyle tekrar TOP10'a girdiyse eski bull case kapanır;
+            # aşağıda sıfırdan yeni case açılır.
+            if tk in top10_map:
+                _close_case(tk, active, history, today, "REENTERED_TOP10_NEW_CASE", item=item)
+                continue
+            if item is None:
+                continue
+            _copy_case_metrics(rec, item)
+            supported, bull_gap = _bull_watch_supported(item)
+            rec["bull_upside_pct"] = round(bull_gap, 1) if bull_gap is not None else None
+            rec["last_seen_date"] = today
+            rec["days_tracked"] = int(rec.get("days_tracked", 0)) + 1
+            if not supported:
+                _close_case(tk, active, history, today, "BULL_CASE_NO_LONGER_SUPPORTED", item=item)
+                continue
+            _append_daily_snapshot(daily, rec, item, None, today)
+            continue
+
+        # ACTIVE / APPROACHING ana TOP10 case'i
+        if tk in top10_map:
+            rank, item = top10_map[tk]
+            _copy_case_metrics(rec, item)
+            gap = _safe_float(item.get("base_upside_pct"))
+            rec["last_seen_date"] = today
+            rec["last_rank"] = rank
+            rec["days_tracked"] = int(rec.get("days_tracked", 0)) + 1
+            price = _safe_float(item.get("price"))
+            alpha = _safe_float(item.get("alpha_score"))
+            if price is not None:
+                rec["max_price"] = max([x for x in [_safe_float(rec.get("max_price")), price] if x is not None])
+                rec["min_price"] = min([x for x in [_safe_float(rec.get("min_price")), price] if x is not None])
+            if alpha is not None:
+                rec["max_alpha"] = max(_safe_float(rec.get("max_alpha"), alpha), alpha)
+            if gap is not None:
+                old_gap = _safe_float(rec.get("min_base_gap_pct"))
+                rec["min_base_gap_pct"] = min(gap, old_gap) if old_gap is not None else gap
+                rec["status"] = "APPROACHING_BASE" if 0 < gap < APPROACHING_ENTRY_PCT else "ACTIVE_OPPORTUNITY"
+            _append_daily_snapshot(daily, rec, item, rank, today)
+            continue
+
+        # TOP10'da değil. Base gerçekten ulaşılmışsa bull-case'e geçme hakkı var;
+        # aksi halde bu case doğal TOP10 çıkışıyla kapanır.
+        if item is not None:
+            _copy_case_metrics(rec, item)
+            gap = _safe_float(item.get("base_upside_pct"))
+            if gap is not None and gap <= 0:
+                if rec.get("base_reached_date") is None:
+                    rec["base_reached_date"] = today
+                    rec["base_reached_price"] = _safe_float(item.get("price"))
+                supported, bull_gap = _bull_watch_supported(item)
+                rec["bull_upside_pct"] = round(bull_gap, 1) if bull_gap is not None else None
+                if supported:
+                    rec["status"] = "BULL_CASE_WATCH"
+                    rec["last_seen_date"] = today
+                    rec["days_tracked"] = int(rec.get("days_tracked", 0)) + 1
+                    _append_daily_snapshot(daily, rec, item, None, today)
+                    print(f"  [CASE-DURUM {tk}] {rec.get('case_id')} -> BULL_CASE_WATCH")
+                    continue
+                _close_case(tk, active, history, today, "BASE_REACHED_THESIS_COMPLETE", item=item)
+                continue
+        _close_case(tk, active, history, today, "TOP10_EXIT", item=item)
+
+    # 2) Bugünkü TOP10'da olup aktif case'i bulunmayan her ticker için YENİ case aç.
+    for rank, item in enumerate(top10, 1):
         tk = item.get("ticker")
         if not tk:
             continue
-        f = _safe_float(item.get("fundamental_score")) or 0.0
-        a = _safe_float(item.get("alpha_score")) or 0.0
-        gap = _safe_float(item.get("base_upside_pct"))
-        if gap is not None and gap < APPROACHING_ENTRY_PCT and f >= FOLLOWUP_MIN_FUNDAMENTAL and a >= FOLLOWUP_MIN_FINAL_ALPHA:
-            if tk not in records:
-                records[tk] = _seed_record(tk, item, today)
+        if tk not in active.get("cases", {}):
+            rec = _new_case(tk, item, rank, active, history, today)
+            rec["days_tracked"] = 1
+            _append_daily_snapshot(daily, rec, item, rank, today)
 
-    # Güncel analiz gelen kayıtları güncelle ve statü geçir.
-    for tk, rec in list(records.items()):
-        item = item_map.get(tk)
-        if item is None:
-            # Bugün veri alınamadıysa hemen silme; mevcut tez kaydı korunur.
-            continue
-        rec["days_tracked"] = int(rec.get("days_tracked", 0)) + 1
-        _copy_followup_metrics(rec, item)
-        fundamental = _safe_float(item.get("fundamental_score")) or 0.0
-        final_alpha = _safe_float(item.get("alpha_score")) or 0.0
-        gap = _safe_float(item.get("base_upside_pct"))
-        bull_supported, bull_gap = _bull_watch_supported(item)
-        rec["bull_upside_pct"] = round(bull_gap, 1) if bull_gap is not None else None
-
-        if fundamental < FOLLOWUP_MIN_FUNDAMENTAL or final_alpha < FOLLOWUP_MIN_FINAL_ALPHA or gap is None:
-            _set_status(rec, "THESIS_WEAKENED", today)
-            continue
-
-        prev_status = rec.get("status", "ACTIVE_OPPORTUNITY")
-
-        if gap <= 0:
-            if rec.get("base_reached_date") is None:
-                rec["base_reached_date"] = today
-                rec["base_reached_price"] = _safe_float(item.get("price"))
-            if bull_supported:
-                _set_status(rec, "BULL_CASE_WATCH", today)
-            else:
-                _set_status(rec, "THESIS_COMPLETE", today)
-            continue
-
-        if 0 < gap < APPROACHING_ENTRY_PCT:
-            _set_status(rec, "APPROACHING_BASE", today)
-            continue
-
-        # Base tekrar uzaklaştı. Follow-up'tan ana fırsata dönüş için %12+ farkın
-        # iki ardışık taramada korunmasını isteriz (hysteresis).
-        if prev_status in {"APPROACHING_BASE", "BULL_CASE_WATCH"}:
-            if gap >= ACTIVE_RETURN_PCT:
-                rec["return_streak"] = int(rec.get("return_streak", 0)) + 1
-                if rec["return_streak"] >= RETURN_CONFIRM_SCANS:
-                    _set_status(rec, "ACTIVE_OPPORTUNITY", today)
-            else:
-                rec["return_streak"] = 0
-                _set_status(rec, "APPROACHING_BASE", today)
-        else:
-            _set_status(rec, "ACTIVE_OPPORTUNITY", today)
-
-    # Tamamlanmış/zayıflamış kayıtlar slotlardan çıkar ama arşiv kaydı tutulur.
-    _sync_sticky_slots(state, "approaching_slots", "APPROACHING_BASE")
-    _sync_sticky_slots(state, "bull_slots", "BULL_CASE_WATCH")
-    _prune_followup_queue(state, "APPROACHING_BASE", "approaching_slots")
-    _prune_followup_queue(state, "BULL_CASE_WATCH", "bull_slots")
-
-    # Follow-up'ta olup ana fırsata dönüş teyidini henüz tamamlamayanları ana listeden bastır.
-    suppress = set()
-    for tk, rec in records.items():
-        if rec.get("status") in {"APPROACHING_BASE", "BULL_CASE_WATCH"}:
-            suppress.add(tk)
-    active = [x for x in raw_active if x.get("ticker") not in suppress]
-    active.sort(key=lambda x: x.get("alpha_score", 0), reverse=True)
-    for i, item in enumerate(active, 1):
-        item["rank"] = i
-
-    # Log görünürlüğü
-    print("[TEZ-TAKİP] Base'e Yaklaşan slotlar: " + (", ".join(state.get("approaching_slots", [])) or "boş"))
-    print("[TEZ-TAKİP] Upside Watch slotlar: " + (", ".join(state.get("bull_slots", [])) or "boş"))
-    aq = sum(1 for r in records.values() if r.get("status") == "APPROACHING_BASE") - len(state.get("approaching_slots", []))
-    bq = sum(1 for r in records.values() if r.get("status") == "BULL_CASE_WATCH") - len(state.get("bull_slots", []))
-    print(f"[TEZ-TAKİP] Gizli kuyruk: approaching={max(0, aq)} | bull={max(0, bq)}")
-
-    state["records"] = records
-    return active, state
+    # 3) Görsel için istatistik logları
+    approaching_count = sum(1 for r in active.get("cases", {}).values() if r.get("status") == "APPROACHING_BASE")
+    bull_count = sum(1 for r in active.get("cases", {}).values() if r.get("status") == "BULL_CASE_WATCH")
+    print(f"[CASE-TAKİP] aktif case={len(active.get('cases', {}))} | approaching={approaching_count} | bull_watch={bull_count} | kapalı case={len(history.get('closed_cases', []))}")
+    return active, history, daily
 
 
-def followup_visible_payload(state):
-    records = state.get("records", {})
-    approaching = [records[tk] for tk in state.get("approaching_slots", []) if tk in records][:FOLLOWUP_MAX_PER_BLOCK]
-    bull = [records[tk] for tk in state.get("bull_slots", []) if tk in records][:FOLLOWUP_MAX_PER_BLOCK]
-    return approaching, bull
+def _followup_priority(rec):
+    alpha = _safe_float(rec.get("alpha_score")) or 0.0
+    fundamental = _safe_float(rec.get("fundamental_score")) or 0.0
+    if rec.get("status") == "APPROACHING_BASE":
+        gap = max(0.0, _safe_float(rec.get("base_upside_pct")) or 0.0)
+        return (APPROACHING_ENTRY_PCT - min(gap, APPROACHING_ENTRY_PCT)) * 3.0 + alpha + fundamental * 0.15
+    if rec.get("status") == "BULL_CASE_WATCH":
+        bull_gap = max(0.0, _safe_float(rec.get("bull_upside_pct")) or 0.0)
+        return alpha + fundamental * 0.15 + min(bull_gap, 30.0) * 0.20
+    return alpha
 
+
+def followup_visible_payload(active_store):
+    """İkinci görsel bir kapasite limiti değil, görünüm limitidir.
+    APPROACHING_BASE yalnızca hâlen TOP10 case'i olanlardan oluşur ve en fazla 3'ü gösterilir.
+    Bull Watch tarafında da aktif case'ler arasından en anlamlı 3 gösterilir.
+    """
+    records = list(active_store.get("cases", {}).values())
+    approaching = [r for r in records if r.get("status") == "APPROACHING_BASE"]
+    bull = [r for r in records if r.get("status") == "BULL_CASE_WATCH"]
+    approaching.sort(key=_followup_priority, reverse=True)
+    bull.sort(key=_followup_priority, reverse=True)
+    return approaching[:FOLLOWUP_MAX_PER_BLOCK], bull[:FOLLOWUP_MAX_PER_BLOCK]
 
 # --------------------------------------------------------------------------
 # 5) RAPOR OLUŞTURMA
@@ -2748,7 +2839,7 @@ MIN_FUNDAMENTAL_SCORE_ACTIVE = 55.0
 MIN_BASE_UPSIDE_PCT_ACTIVE = 8.0
 
 
-def _opportunity_gate(item, fundamental, final_alpha):
+def _opportunity_gate(item, fundamental, final_alpha, continuing_case=False):
     price = _safe_float(item.get("price"))
     base_fv = _safe_float(item.get("base_fv"))
 
@@ -2764,18 +2855,18 @@ def _opportunity_gate(item, fundamental, final_alpha):
             f"fundamental skor {fundamental:.1f} < {MIN_FUNDAMENTAL_SCORE_ACTIVE:.1f}"
         )
 
-    if base_upside_pct < MIN_BASE_UPSIDE_PCT_ACTIVE:
-        if base_upside_pct <= 0:
-            reason = (
-                f"güncel fiyat Base FV'yi fiyatlamış/aşmış "
-                f"(Base fark %{base_upside_pct:.1f})"
-            )
-        else:
-            reason = (
-                f"Base fark yalnızca %{base_upside_pct:.1f}; "
-                f"asgari fırsat eşiği %{MIN_BASE_UPSIDE_PCT_ACTIVE:.1f}"
-            )
-        return False, base_upside_pct, reason
+    # Yeni bir case ancak en az %8 Base alanı varken ana fırsat havuzuna girebilir.
+    # FAKAT hâlihazırda TOP10 case'i olan bir hisse %8'in altına düştü diye
+    # listeden atılmaz; Base'e gerçekten ulaşana kadar ranking'de kalabilir.
+    if base_upside_pct <= 0:
+        return False, base_upside_pct, (
+            f"güncel fiyat Base FV'yi fiyatlamış/aşmış (Base fark %{base_upside_pct:.1f})"
+        )
+    if base_upside_pct < MIN_BASE_UPSIDE_PCT_ACTIVE and not continuing_case:
+        return False, base_upside_pct, (
+            f"yeni case için Base fark yalnızca %{base_upside_pct:.1f}; "
+            f"giriş eşiği %{MIN_BASE_UPSIDE_PCT_ACTIVE:.1f}"
+        )
 
     if final_alpha < FINAL_ALPHA_MIN_ACTIVE:
         return False, base_upside_pct, (
@@ -2785,7 +2876,7 @@ def _opportunity_gate(item, fundamental, final_alpha):
     return True, base_upside_pct, "uygun"
 
 
-def assign_final_alpha_scores(analyzed):
+def assign_final_alpha_scores(analyzed, continuing_case_tickers=None):
     """Final Alpha + Fundamental Opportunity Gate.
 
     Akış:
@@ -2814,8 +2905,9 @@ def assign_final_alpha_scores(analyzed):
             ),
         )
 
+        continuing = item.get("ticker") in (continuing_case_tickers or set())
         eligible, base_upside_pct, reason = _opportunity_gate(
-            item, fundamental, final_alpha
+            item, fundamental, final_alpha, continuing_case=continuing
         )
 
         item["fundamental_score"] = round(fundamental, 1)
@@ -2941,8 +3033,8 @@ def main():
     full_history = load_full_history()
     last_seen_map = build_last_seen_map(full_history, exclude_date=today_str)
     previous_day_top10_map = build_previous_day_top10_map(full_history, exclude_date=today_str)
-    followup_state = load_followup_state()
-    candidates_df = augment_candidates_with_followups(candidates_df, followup_state)
+    active_cases, case_history, case_daily_history = load_case_store()
+    candidates_df = augment_candidates_with_active_cases(candidates_df, active_cases)
 
     print(f"Round 2: {len(candidates_df)} aday için Gemini analizi başlıyor...")
     if "cap_bucket" in candidates_df.columns:
@@ -2970,10 +3062,15 @@ def main():
         time.sleep(0.5)   # borsapy/İş Yatırım'a nazik davranalım
     save_foreign_ratio_history()
 
-    raw_ranked, quality_excluded = assign_final_alpha_scores(analyzed)
-    ranked, followup_state = update_thesis_lifecycle(raw_ranked, quality_excluded, analyzed, followup_state)
-    save_followup_state(followup_state)
-    print(f"Final Alpha Engine: {len(ranked)}/{len(analyzed)} aday aktif fırsat listesinde; follow-up statüsündekiler ayrı tez görseline taşındı.")
+    continuing_case_tickers = active_main_case_tickers(active_cases)
+    ranked, quality_excluded = assign_final_alpha_scores(
+        analyzed, continuing_case_tickers=continuing_case_tickers
+    )
+    active_cases, case_history, case_daily_history = update_case_lifecycle(
+        ranked, analyzed, active_cases, case_history, case_daily_history
+    )
+    save_case_store(active_cases, case_history, case_daily_history)
+    print(f"Final Alpha Engine: {len(ranked)}/{len(analyzed)} aday aktif fırsat havuzunda; TOP10 case takibi ayrı state'te tutuluyor.")
     for item in ranked[:15]:
         print(f"  [FINAL-ALPHA {item['ticker']}] fundamental={item.get('fundamental_score')} | teknik={item.get('technical_score')} | final={item.get('alpha_score')} | Base fark=%{item.get('base_upside_pct')}")
     top10_cap_counts = {}
@@ -3011,7 +3108,7 @@ def main():
     # İkinci günlük görsel: sticky tez yaşam döngüsü takibi. Bildirim değil,
     # sadece maksimum 3+3 hisselik takip paneli.
     try:
-        approaching_rows, bull_rows = followup_visible_payload(followup_state)
+        approaching_rows, bull_rows = followup_visible_payload(active_cases)
         followup_png = render_followup_report(approaching_rows, bull_rows)
         send_telegram_photo(
             followup_png,
