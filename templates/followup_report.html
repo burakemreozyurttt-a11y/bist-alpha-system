@@ -12,20 +12,20 @@
 .side{text-align:right}.big{font:800 25px Montserrat}.big small{font-size:12px}.side .lbl{font-size:10px;color:var(--muted);margin-top:2px}.perf{margin-top:9px;font:700 12px Montserrat;color:#0e7b54}.perf.neg{color:#c94848}.empty{padding:26px;text-align:center;color:#6d7d8e;font-size:13px}.footer{font-size:9.5px;color:#667587;line-height:1.4;padding:2px 6px 0;display:flex;justify-content:space-between;gap:30px}.footer b{white-space:nowrap}
 </style></head><body><div class="page">
 <div class="top"><div class="brand">BEIQ</div><div class="title"><b>TEZ TAKİBİ</b><span>{{ date }}</span></div></div>
-<div class="intro">Bu panel ana günlük sıralamadan ayrılan fakat tezi hâlâ izlenen hisseleri gösterir. Mevcut slotlar küçük günlük skor farklarıyla değiştirilmez; yeni adaylar boş slot oluşana kadar arka planda bekler.</div>
-<div class="block approach"><div class="blockhead"><h2>BASE'E YAKLAŞANLAR</h2><span>Maksimum 3 aktif tez</span></div><div class="rows">
+<div class="intro">Bu panel günlük TOP10 içindeki Base'e yaklaşan case'leri ve Base'e ulaştıktan sonra destekli bull-case'i devam eden case'leri gösterir. %8 eşiği ana listeden çıkarma kuralı değildir; yalnızca tez aşamasını işaretler.</div>
+<div class="block approach"><div class="blockhead"><h2>BASE'E YAKLAŞANLAR</h2><span>TOP10 içinden maksimum 3 görünüm</span></div><div class="rows">
 {% if approaching %}{% for x in approaching %}<div class="row">
-<div><div class="ticker">{{ x.ticker }}</div><div class="tag">İlk tespit: {{ x.first_seen_date }}</div><div class="tag">Takip: {{ x.days }} tarama</div></div>
-<div class="pricegrid"><div class="metric"><b>{{ x.first_seen_price }}</b><span>İlk Fiyat</span></div><div class="metric"><b>{{ x.price }}</b><span>Güncel</span></div><div class="metric"><b>{{ x.base }}</b><span>Base</span></div><div class="metric"><b>{{ '%.1f'|format(x.alpha) }}</b><span>Alpha</span></div></div>
-<div class="mid"><div class="line"><span class="pill warn">Base tezi aktif</span><span class="pill">{% if x.performance is not none %}İlk tespitten {{ '%+.1f'|format(x.performance) }}%{% else %}Performans N/A{% endif %}</span></div><div class="note">{{ x.note }}</div><div class="progress" style="--w:{{ [0, [100, 100 - ((x.base_gap or 8)/8*100)]|min]|max }}%"><i></i></div></div>
+<div><div class="ticker">{{ x.ticker }}</div><div class="tag">Case başlangıcı: {{ x.first_seen_date }}</div><div class="tag">Takip: {{ x.days }} tarama</div></div>
+<div class="pricegrid"><div class="metric"><b>{{ x.first_seen_price }}</b><span>Case Fiyatı</span></div><div class="metric"><b>{{ x.price }}</b><span>Güncel</span></div><div class="metric"><b>{{ x.base }}</b><span>Base</span></div><div class="metric"><b>{{ '%.1f'|format(x.alpha) }}</b><span>Alpha</span></div></div>
+<div class="mid"><div class="line"><span class="pill warn">Base tezi aktif</span><span class="pill">{% if x.performance is not none %}Case başlangıcından {{ '%+.1f'|format(x.performance) }}%{% else %}Performans N/A{% endif %}</span></div><div class="note">{{ x.note }}</div><div class="progress" style="--w:{{ [0, [100, 100 - ((x.base_gap or 8)/8*100)]|min]|max }}%"><i></i></div></div>
 <div class="side"><div class="big">{% if x.base_gap is not none %}%{{ '%.1f'|format(x.base_gap) }}{% else %}N/A{% endif %}</div><div class="lbl">Base'e kalan</div>{% if x.performance is not none %}<div class="perf {{ 'neg' if x.performance < 0 else '' }}">{{ '%+.1f'|format(x.performance) }}%</div>{% endif %}</div>
 </div>{% endfor %}{% else %}<div class="empty">Bugün Base'e yaklaşan aktif takip hissesi yok.</div>{% endif %}
 </div></div>
 <div class="block bull"><div class="blockhead"><h2>BASE'E ULAŞAN / UPSIDE WATCH</h2><span>Maksimum 3 destekli bull-case</span></div><div class="rows">
 {% if bull_watch %}{% for x in bull_watch %}<div class="row">
-<div><div class="ticker">{{ x.ticker }}</div><div class="tag">İlk tespit: {{ x.first_seen_date }}</div><div class="tag">Base temas: {{ x.base_reached_date }}</div></div>
-<div class="pricegrid"><div class="metric"><b>{{ x.first_seen_price }}</b><span>İlk Fiyat</span></div><div class="metric"><b>{{ x.price }}</b><span>Güncel</span></div><div class="metric"><b>{{ x.base }}</b><span>Base</span></div><div class="metric"><b>{{ x.upside }}</b><span>Upside</span></div></div>
-<div class="mid"><div class="line"><span class="pill good">Bull-case destekli</span><span class="pill">{% if x.performance is not none %}İlk tespitten {{ '%+.1f'|format(x.performance) }}%{% else %}Performans N/A{% endif %}</span></div><div class="note">{{ x.note }}</div></div>
+<div><div class="ticker">{{ x.ticker }}</div><div class="tag">Case başlangıcı: {{ x.first_seen_date }}</div><div class="tag">Base temas: {{ x.base_reached_date }}</div></div>
+<div class="pricegrid"><div class="metric"><b>{{ x.first_seen_price }}</b><span>Case Fiyatı</span></div><div class="metric"><b>{{ x.price }}</b><span>Güncel</span></div><div class="metric"><b>{{ x.base }}</b><span>Base</span></div><div class="metric"><b>{{ x.upside }}</b><span>Upside</span></div></div>
+<div class="mid"><div class="line"><span class="pill good">Bull-case destekli</span><span class="pill">{% if x.performance is not none %}Case başlangıcından {{ '%+.1f'|format(x.performance) }}%{% else %}Performans N/A{% endif %}</span></div><div class="note">{{ x.note }}</div></div>
 <div class="side"><div class="big">{% if x.bull_gap is not none %}%{{ '%.1f'|format(x.bull_gap) }}{% else %}N/A{% endif %}</div><div class="lbl">Upside'a kalan</div>{% if x.performance is not none %}<div class="perf {{ 'neg' if x.performance < 0 else '' }}">{{ '%+.1f'|format(x.performance) }}%</div>{% endif %}</div>
 </div>{% endfor %}{% else %}<div class="empty">Bugün destekli Upside Watch statüsünde hisse yok.</div>{% endif %}
 </div></div>
