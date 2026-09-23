@@ -619,12 +619,12 @@ def build_followup_context(approaching_rows, bull_rows):
         gap = _safe_float(r.get("base_upside_pct"))
         approaching.append({
             "ticker": r.get("ticker", "—"),
-            "first_seen_date": r.get("first_seen_date", "—"),
-            "first_seen_price": _followup_fmt(r.get("first_seen_price")),
+            "first_seen_date": r.get("entry_date", r.get("first_seen_date", "—")),
+            "first_seen_price": _followup_fmt(r.get("entry_price", r.get("first_seen_price"))),
             "price": _followup_fmt(r.get("price")),
             "base": _followup_fmt(r.get("base_fv")),
             "base_gap": gap,
-            "performance": _followup_perf(r.get("first_seen_price"), r.get("price")),
+            "performance": _followup_perf(r.get("entry_price", r.get("first_seen_price")), r.get("price")),
             "days": int(r.get("days_tracked", 0) or 0),
             "alpha": _safe_float(r.get("alpha_score"), 0) or 0,
             "note": _short_evidence(r.get("catalysts"), "Base tezi geçerliliğini koruyor"),
@@ -635,13 +635,13 @@ def build_followup_context(approaching_rows, bull_rows):
         bull_gap = _safe_float(r.get("bull_upside_pct"))
         bull.append({
             "ticker": r.get("ticker", "—"),
-            "first_seen_date": r.get("first_seen_date", "—"),
-            "first_seen_price": _followup_fmt(r.get("first_seen_price")),
+            "first_seen_date": r.get("entry_date", r.get("first_seen_date", "—")),
+            "first_seen_price": _followup_fmt(r.get("entry_price", r.get("first_seen_price"))),
             "price": _followup_fmt(r.get("price")),
             "base": _followup_fmt(r.get("base_fv")),
             "upside": _followup_fmt(r.get("bull_fv")),
             "bull_gap": bull_gap,
-            "performance": _followup_perf(r.get("first_seen_price"), r.get("price")),
+            "performance": _followup_perf(r.get("entry_price", r.get("first_seen_price")), r.get("price")),
             "base_reached_date": r.get("base_reached_date", "—") or "—",
             "alpha": _safe_float(r.get("alpha_score"), 0) or 0,
             "note": _short_evidence(r.get("upside_evidence"), "Destekli bull-case izleniyor"),
