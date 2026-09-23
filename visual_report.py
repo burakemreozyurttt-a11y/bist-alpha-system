@@ -124,18 +124,18 @@ RADAR_THEMES = [
 ]
 
 
-def radar_svg(scores, rank=1, size=210):
+def radar_svg(scores, rank=1, size=200):
     labels = list(scores.keys())
     values = [scores[k] for k in labels]
     themes = {
-        1: ("#15986b", "rgba(21,152,107,.19)"),
-        2: ("#3d7fe7", "rgba(61,127,231,.19)"),
-        3: ("#ef922f", "rgba(239,146,47,.19)"),
+        1: ("#15986b", "rgba(21,152,107,.20)"),
+        2: ("#3d7fe7", "rgba(61,127,231,.20)"),
+        3: ("#ef922f", "rgba(239,146,47,.20)"),
     }
     stroke, fill = themes.get(rank, themes[1])
     cx = cy = size / 2
-    radius = size * 0.31
-    label_r = size * 0.355
+    radius = 70.0
+    label_r = 79.0  # referans şablondaki gibi poligona yakın etiketler
 
     def pt(angle_deg, r):
         a = math.radians(angle_deg - 90)
@@ -143,24 +143,28 @@ def radar_svg(scores, rank=1, size=210):
 
     angles = [i * 360 / 6 for i in range(6)]
     grid = []
-    for frac in (0.25, 0.5, 0.75, 1.0):
+    for frac in (0.50, 0.75, 1.0):
         pts = " ".join(f"{pt(a, radius*frac)[0]:.1f},{pt(a, radius*frac)[1]:.1f}" for a in angles)
-        grid.append(f'<polygon points="{pts}" fill="none" stroke="#d2dde7" stroke-width="1"/>')
+        grid.append(f'<polygon points="{pts}" fill="none" stroke="#cbd7e2" stroke-width="1"/>')
+
     axes = []
     for a in angles:
         x, y = pt(a, radius)
-        axes.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="#d9e2eb" stroke-width="1"/>')
+        axes.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="#d4dfe8" stroke-width="1"/>')
 
     data_pts = " ".join(
         f"{pt(a, radius * (_clamp(val)/100))[0]:.1f},{pt(a, radius * (_clamp(val)/100))[1]:.1f}"
         for a, val in zip(angles, values)
     )
+
     label_parts = []
     for a, label in zip(angles, labels):
         x, y = pt(a, label_r)
         anchor = "middle"
-        if x < cx - 10: anchor = "end"
-        elif x > cx + 10: anchor = "start"
+        if x < cx - 8:
+            anchor = "end"
+        elif x > cx + 8:
+            anchor = "start"
         label_parts.append(
             f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" dominant-baseline="middle" class="radar-label">{label}</text>'
         )
@@ -168,10 +172,9 @@ def radar_svg(scores, rank=1, size=210):
     return (
         f'<svg viewBox="0 0 {size} {size}" class="radar-svg" xmlns="http://www.w3.org/2000/svg">'
         + "".join(grid) + "".join(axes)
-        + f'<polygon points="{data_pts}" fill="{fill}" stroke="{stroke}" stroke-width="2.2"/>'
+        + f'<polygon points="{data_pts}" fill="{fill}" stroke="{stroke}" stroke-width="2.4"/>'
         + "".join(label_parts) + '</svg>'
     )
-
 
 def fetch_week_price_series(ticker):
     end = datetime.now(TR_TZ).date()
