@@ -62,13 +62,6 @@ def profile_class(alpha):
     return "watch"
 
 
-def safe_analysis_summary(item, radar):
-    ordered = sorted(radar.items(), key=lambda kv: kv[1], reverse=True)
-    strongest = ", ".join(k for k, _ in ordered[:2])
-    monitored = ", ".join(k for k, _ in ordered[-2:])
-    return f"Öne çıkan yapı: {strongest}. İzlenen alanlar: {monitored}."
-
-
 def _normalize_cash_quality(cfo_to_net_income):
     x = _safe_float(cfo_to_net_income)
     if x is None:
@@ -117,13 +110,6 @@ def compute_radar_scores(item):
     }
 
 
-RADAR_THEMES = [
-    {"stroke": "#15986b", "fill": "rgba(21,152,107,.18)"},
-    {"stroke": "#3a79e3", "fill": "rgba(58,121,227,.18)"},
-    {"stroke": "#f08c2e", "fill": "rgba(240,140,46,.18)"},
-]
-
-
 def radar_svg(scores, rank=1, size=200):
     labels = list(scores.keys())
     values = [scores[k] for k in labels]
@@ -135,7 +121,7 @@ def radar_svg(scores, rank=1, size=200):
     stroke, fill = themes.get(rank, themes[1])
     cx = cy = size / 2
     radius = 70.0
-    label_r = 79.0  # referans şablondaki gibi poligona yakın etiketler
+    label_r = 79.0
 
     def pt(angle_deg, r):
         a = math.radians(angle_deg - 90)
@@ -165,9 +151,7 @@ def radar_svg(scores, rank=1, size=200):
             anchor = "end"
         elif x > cx + 8:
             anchor = "start"
-        label_parts.append(
-            f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" dominant-baseline="middle" class="radar-label">{label}</text>'
-        )
+        label_parts.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" dominant-baseline="middle" class="radar-label">{label}</text>')
 
     return (
         f'<svg viewBox="0 0 {size} {size}" class="radar-svg" xmlns="http://www.w3.org/2000/svg">'
@@ -175,6 +159,7 @@ def radar_svg(scores, rank=1, size=200):
         + f'<polygon points="{data_pts}" fill="{fill}" stroke="{stroke}" stroke-width="2.4"/>'
         + "".join(label_parts) + '</svg>'
     )
+
 
 def fetch_week_price_series(ticker):
     end = datetime.now(TR_TZ).date()
@@ -193,8 +178,7 @@ def fetch_week_price_series(ticker):
         if date_col:
             d[date_col] = pd.to_datetime(d[date_col], errors="coerce")
             d = d.sort_values(date_col)
-        vals = [float(x) for x in d[close_col].dropna().tail(6).tolist()]
-        return vals
+        return [float(x) for x in d[close_col].dropna().tail(6).tolist()]
     except Exception as e:
         print(f"[GÖRSEL] {ticker} 1 haftalık fiyat serisi alınamadı: {e}")
         return []
@@ -234,7 +218,7 @@ def _upside_pct(item):
     fv = _safe_float(item.get("base_fv"))
     if not p or fv is None:
         return None
-    return (fv/p - 1) * 100
+    return (fv / p - 1) * 100
 
 
 def rank_delta(item, current_rank, last_seen_map):
@@ -257,6 +241,12 @@ def _compact_text(txt, max_chars=66):
     return cut.rstrip(" ,;:.") + "…"
 
 
+def _normalize_text_for_note(txt):
+    txt = _compact_text(txt, 90)
+    txt = txt.replace("%;", "% ")
+    return txt
+
+
 def _public_points(items, limit=3):
     out = []
     for x in (items or [])[:limit]:
@@ -269,19 +259,91 @@ def _public_points(items, limit=3):
         for bad, good in replacements.items():
             if bad in low:
                 txt = txt.replace(bad, good).replace(bad.capitalize(), good.capitalize())
-        out.append(_compact_text(txt))
+        out.append(_compact_text(txt, 72))
     return out
 
 
-def _profile_summary(item, radar):
-    profile = profile_label(item.get("alpha_score"))
-    if profile == "GÜÇLÜ PROFİL":
-        return safe_analysis_summary(item, radar)
-    if profile == "POZİTİF PROFİL":
-        return safe_analysis_summary(item, radar)
-    if profile == "DENGELİ PROFİL":
-        return "Göstergeler dengeli bir profil işaret eder; güçlü ve zayıf başlıklar birlikte izlenmelidir."
-    return "Mevcut veri seti, daha temkinli ve yakın izleme gerektiren bir görünüm işaret etmektedir."
+def _sentence_case(txt):
+    txt = str(txt).strip()
+    if not txt:
+        return txt
+    return txt[0].lower() + txt[1:]
+
+
+def _profile_summary(item, radar, prev_snapshot=None):
+    """Kart içindeki analist notu: kısa, doğal, hisseye özel ve nötr tonlu."""
+    ticker = item.get("ticker") or "Bu isim"
+    alpha = _safe_float(item.get("alpha_score"), 0) or 0
+    technical = _safe_float(item.get("technical_score"), 50) or 50
+    upside = _upside_pct(item)
+    positives = item.get("catalysts") or []
+    risks = item.get("risks") or []
+
+    ordered = sorted(radar.items(), key=lambda kv: kv[1], reverse=True)
+    strong1, strong2 = ordered[0][0], ordered[1][0]
+    weak1 = ordered[-1][0]
+
+    # 1) Açılış cümlesi: mümkün olduğunca doğal ve veri odaklı.
+    if positives:
+        p1 = _normalize_text_for_note(positives[0])
+        if len(positives) > 1:
+            p2 = _normalize_text_for_note(positives[1])
+            lead = f"{ticker}'da {p1}; { _sentence_case(p2) } tabloyu destekliyor."
+        else:
+            lead = f"{ticker}'da {p1} öne çıkıyor."
+    else:
+        if alpha >= 75:
+            lead = f"{ticker}'da {strong1} ve {strong2} tarafı güçlü bir görünüm sunuyor."
+        elif alpha >= 65:
+            lead = f"{ticker}'da {strong1} ve {strong2} tarafı dengeli biçimde öne çıkıyor."
+        else:
+            lead = f"{ticker}'da genel görünüm daha dengeli; {strong1} göreli olarak daha olumlu duruyor."
+
+    # 2) Güncel taramaya göre değişim / değerleme notu.
+    mid = ""
+    prev_alpha = _safe_float((prev_snapshot or {}).get("alpha_score"))
+    prev_base = _safe_float((prev_snapshot or {}).get("base_fv"))
+    cur_base = _safe_float(item.get("base_fv"))
+    prev_rank = (prev_snapshot or {}).get("rank")
+    cur_rank = item.get("rank")
+
+    if prev_base and cur_base and prev_base > 0:
+        chg = (cur_base / prev_base - 1) * 100
+        if abs(chg) >= 4:
+            if chg > 0:
+                mid = f"Son taramaya göre base senaryo {prev_base:.0f} TL'den {cur_base:.0f} TL'ye yukarı revize edildi."
+            else:
+                mid = f"Son taramaya göre base senaryo {prev_base:.0f} TL'den {cur_base:.0f} TL'ye çekildi."
+    if not mid and prev_alpha is not None and abs(alpha - prev_alpha) >= 4:
+        direction = "güçlenmiş" if alpha > prev_alpha else "zayıflamış"
+        mid = f"Alpha Score önceki taramaya göre {direction} görünüyor."
+    if not mid and prev_rank is not None and cur_rank is not None and prev_rank != cur_rank:
+        if cur_rank < prev_rank:
+            mid = f"Önceki taramaya göre sıralamada yukarı taşınmış durumda."
+        else:
+            mid = f"Önceki taramaya göre sıralamada bir miktar geri çekilme var."
+    if not mid and upside is not None:
+        if upside >= 15:
+            mid = f"Base senaryo ile mevcut fiyat arasındaki fark %{upside:.1f} seviyesinde kalıyor."
+        elif upside >= 5:
+            mid = f"Base senaryo ile mevcut fiyat arasında %{upside:.1f} düzeyinde sınırlı ama pozitif bir fark bulunuyor."
+        elif upside >= 0:
+            mid = f"Base senaryo ile fiyat arasındaki fark %{upside:.1f} ile daralmış durumda."
+        else:
+            mid = f"Mevcut fiyat, base senaryonun %{abs(upside):.1f} üzerinde seyrediyor."
+
+    # 3) İzlenen ana başlık.
+    if risks:
+        r1 = _normalize_text_for_note(risks[0])
+        tail = f"İzlenen ana başlık ise { _sentence_case(r1) }."
+    else:
+        if technical <= 35:
+            tail = f"İzlenen ana başlık ise Teknik taraftaki görece zayıf görünüm."
+        else:
+            tail = f"İzlenen ana başlık ise {weak1} tarafındaki göreli zayıflık."
+
+    note = f"{lead} {mid} {tail}"
+    return _compact_text(note, 250)
 
 
 def score_cell_class(alpha):
@@ -299,9 +361,12 @@ def build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_sca
     top3 = top15[:3]
     cards = []
     for idx, item in enumerate(top3, 1):
+        item = dict(item)
+        item["rank"] = idx
         radar = compute_radar_scores(item)
         delta, delta_class = rank_delta(item, idx, last_seen_map)
         spark_vals = fetch_week_price_series(item.get("ticker"))
+        prev_snapshot = last_seen_map.get(item.get("ticker"), {}) if last_seen_map else {}
         cards.append({
             "rank": idx,
             "ticker": item.get("ticker"),
@@ -313,7 +378,7 @@ def build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_sca
             "base": _format_num(item.get("base_fv")),
             "upside_value": _format_num(item.get("bull_fv")),
             "upside": _upside_pct(item),
-            "previous_rank": last_seen_map.get(item.get("ticker"), {}).get("rank", "—") if last_seen_map else "—",
+            "previous_rank": prev_snapshot.get("rank", "—"),
             "delta": delta,
             "delta_class": delta_class,
             "profile": profile_label(item.get("alpha_score")),
@@ -321,7 +386,7 @@ def build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_sca
             "radar_svg": radar_svg(radar, rank=idx),
             "sparkline_svg": sparkline_svg(spark_vals),
             "radar": radar,
-            "analysis_summary": _profile_summary(item, radar),
+            "analysis_summary": _profile_summary(item, radar, prev_snapshot=prev_snapshot),
             "positives": _public_points(item.get("catalysts") or [], 2),
             "risks": _public_points(item.get("risks") or [], 2),
         })
@@ -371,7 +436,7 @@ def _env():
     return Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), autoescape=select_autoescape(["html", "xml"]))
 
 
-def render_html_to_png(template_name, context, output_path, viewport):
+def render_html_to_png(template_name, context, output_path, viewport, scale_factor=4):
     env = _env()
     html = env.get_template(template_name).render(**context)
     html_path = OUTPUT_DIR / (Path(output_path).stem + ".html")
@@ -385,10 +450,10 @@ def render_html_to_png(template_name, context, output_path, viewport):
         if system_chromium:
             launch_kwargs["executable_path"] = system_chromium
         browser = p.chromium.launch(**launch_kwargs)
-        page = browser.new_page(viewport=viewport, device_scale_factor=1)
+        page = browser.new_page(viewport=viewport, device_scale_factor=scale_factor)
         page.set_content(html, wait_until="load")
         try:
-            page.wait_for_load_state("networkidle", timeout=5000)
+            page.wait_for_load_state("networkidle", timeout=7000)
         except Exception:
             pass
         page.screenshot(path=str(output_path), full_page=True)
@@ -399,7 +464,7 @@ def render_html_to_png(template_name, context, output_path, viewport):
 def render_daily_report(ranked, last_seen_map, previous_day_top10_map, total_scanned, deep_count):
     ctx = build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_scanned, deep_count)
     out = OUTPUT_DIR / f"beiq_daily_{datetime.now(TR_TZ).strftime('%Y%m%d')}.png"
-    return render_html_to_png("daily_report.html", ctx, out, {"width": 1080, "height": 1600})
+    return render_html_to_png("daily_report.html", ctx, out, {"width": 1080, "height": 1600}, scale_factor=4)
 
 
 def build_weekly_context(entries, agg, summary_text=None):
@@ -467,4 +532,4 @@ def build_weekly_context(entries, agg, summary_text=None):
 def render_weekly_report(entries, agg, summary_text=None):
     ctx = build_weekly_context(entries, agg, summary_text)
     out = OUTPUT_DIR / f"beiq_weekly_{datetime.now(TR_TZ).strftime('%Y%m%d')}.png"
-    return render_html_to_png("weekly_report.html", ctx, out, {"width": 1080, "height": 1380})
+    return render_html_to_png("weekly_report.html", ctx, out, {"width": 1080, "height": 1380}, scale_factor=4)
