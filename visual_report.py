@@ -588,3 +588,79 @@ def render_weekly_report(entries, agg, summary_text=None):
     ctx = build_weekly_context(entries, agg, summary_text)
     out = OUTPUT_DIR / f"beiq_weekly_{datetime.now(TR_TZ).strftime('%Y%m%d')}.png"
     return render_html_to_png("weekly_report.html", ctx, out, {"width": 1080, "height": 1380}, requested_scale=4.0)
+
+
+
+def _followup_fmt(v, decimals=2):
+    x = _safe_float(v)
+    if x is None:
+        return "N/A"
+    return f"{x:,.{decimals}f}"
+
+
+def _followup_perf(first_price, current_price):
+    first = _safe_float(first_price)
+    cur = _safe_float(current_price)
+    if not first or cur is None:
+        return None
+    return (cur / first - 1.0) * 100.0
+
+
+def _short_evidence(items, fallback="Tez desteği izleniyor"):
+    if not items:
+        return fallback
+    txt = " ".join(str(items[0]).replace("\n", " ").split())
+    return _compact_text(txt, 86)
+
+
+def build_followup_context(approaching_rows, bull_rows):
+    approaching = []
+    for r in (approaching_rows or [])[:3]:
+        gap = _safe_float(r.get("base_upside_pct"))
+        approaching.append({
+            "ticker": r.get("ticker", "—"),
+            "first_seen_date": r.get("first_seen_date", "—"),
+            "first_seen_price": _followup_fmt(r.get("first_seen_price")),
+            "price": _followup_fmt(r.get("price")),
+            "base": _followup_fmt(r.get("base_fv")),
+            "base_gap": gap,
+            "performance": _followup_perf(r.get("first_seen_price"), r.get("price")),
+            "days": int(r.get("days_tracked", 0) or 0),
+            "alpha": _safe_float(r.get("alpha_score"), 0) or 0,
+            "note": _short_evidence(r.get("catalysts"), "Base tezi geçerliliğini koruyor"),
+        })
+
+    bull = []
+    for r in (bull_rows or [])[:3]:
+        bull_gap = _safe_float(r.get("bull_upside_pct"))
+        bull.append({
+            "ticker": r.get("ticker", "—"),
+            "first_seen_date": r.get("first_seen_date", "—"),
+            "first_seen_price": _followup_fmt(r.get("first_seen_price")),
+            "price": _followup_fmt(r.get("price")),
+            "base": _followup_fmt(r.get("base_fv")),
+            "upside": _followup_fmt(r.get("bull_fv")),
+            "bull_gap": bull_gap,
+            "performance": _followup_perf(r.get("first_seen_price"), r.get("price")),
+            "base_reached_date": r.get("base_reached_date", "—") or "—",
+            "alpha": _safe_float(r.get("alpha_score"), 0) or 0,
+            "note": _short_evidence(r.get("upside_evidence"), "Destekli bull-case izleniyor"),
+        })
+
+    return {
+        "date": datetime.now(TR_TZ).strftime("%d.%m.%Y"),
+        "approaching": approaching,
+        "bull_watch": bull,
+    }
+
+
+def render_followup_report(approaching_rows, bull_rows):
+    ctx = build_followup_context(approaching_rows, bull_rows)
+    out = OUTPUT_DIR / f"beiq_followup_{datetime.now(TR_TZ).strftime('%Y%m%d')}.png"
+    return render_html_to_png(
+        "followup_report.html",
+        ctx,
+        out,
+        {"width": 1080, "height": 980},
+        requested_scale=4.0,
+    )
