@@ -1280,12 +1280,18 @@ koşulları", "belirsizlik") yakalamaya çalış.
 
 Bilmediğin/verilmeyen bilgiyi UYDURMA, "N/A" ise o konuda yorum yapma.
 
+KART METNİ KURALI:
+- key_risks içindeki her madde TEK BAŞINA okunduğunda anlaşılabilen TAM bir cümle olsun.
+- "...", yarım ifade, başlık dili veya devamı varmış hissi veren cümle kullanma.
+- Her madde yaklaşık 90-150 karakter olsun; mümkünse somut oran/veri + bunun neden risk olduğu birlikte yazılsın.
+- Aynı bilgiyi iki maddede tekrar etme.
+
 {data_block}
 
 Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
 {{
   "bear_case": "<2-3 cümlelik Türkçe, en kötü senaryo argümanı>",
-  "key_risks": ["<risk 1>", "<risk 2>"],
+  "key_risks": ["<90-150 karakterlik, tek başına anlamlı TAM Türkçe cümle; mümkünse somut oran/veri içersin>", "<90-150 karakterlik ikinci TAM cümle>"],
   "value_trap_risk": <0-100 arası tam sayı, bu şirketin bir değer tuzağı olma ihtimali>,
   "bear_fv": <TL cinsinden kötümser adil değer, sayı>
 }}
@@ -1309,12 +1315,18 @@ dayanmalıdır.
 
 Bilmediğin/verilmeyen bilgiyi UYDURMA, "N/A" ise o konuda yorum yapma.
 
+KART METNİ KURALI:
+- catalysts içindeki her madde TEK BAŞINA okunduğunda anlaşılabilen TAM bir cümle olsun.
+- "...", yarım ifade veya başlık dili kullanma.
+- Her madde yaklaşık 90-150 karakter olsun; mümkünse somut veri ile bunun şirket açısından neden önemli olduğunu aynı cümlede ver.
+- Aynı bilgiyi iki maddede tekrar etme.
+
 {data_block}
 
 Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
 {{
   "bull_case": "<2-3 cümlelik Türkçe, destekli iyimser senaryo>",
-  "catalysts": ["<katalizör 1>", "<katalizör 2>"],
+  "catalysts": ["<90-150 karakterlik, tek başına anlamlı TAM Türkçe cümle; veri + analitik anlam birlikte>", "<90-150 karakterlik ikinci TAM cümle>"],
   "growth_conviction": <0-100 arası tam sayı>,
   "bull_fv_supported": <true | false>,
   "bull_fv_evidence": ["<ölçülebilir destek 1>", "<ölçülebilir destek 2>"],
@@ -1371,6 +1383,13 @@ Bull FV desteği: {bull_fv_supported}
 Bull FV kanıtı: {bull_fv_evidence}
 Bull FV: {bull_fv}
 
+KAMUYA AÇIK KART DİLİ:
+- Final catalysts ve risks maddelerini yeniden yaz; Bear/Bull çıktısını ham haliyle kopyalamak zorunda değilsin.
+- Her madde tam cümle olsun ve tek başına okunduğunda ne anlatıldığı anlaşılsın.
+- Bir cümlede mümkünse önce somut bulguyu, sonra analitik anlamını ver.
+- 90-150 karakter hedefle; kesinlikle üç nokta (...) veya yarım bırakılmış ifade üretme.
+- Yatırım eylemi önerme; "al/sat" dili kullanma.
+
 Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
 {{
   "alpha_score": <0-100 arası tam sayı>,
@@ -1383,8 +1402,8 @@ Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
   "upside_case_status": "SUPPORTED | UNSUPPORTED",
   "upside_evidence": ["<Bull FV'yi destekleyen ölçülebilir kanıtlar>"],
   "thesis_summary": "<2-3 cümlelik dengeli sentez>",
-  "catalysts": ["<en inandırıcı katalizör(ler)>"],
-  "risks": ["<en inandırıcı risk(ler)>"],
+  "catalysts": ["<90-150 karakterlik TAM ve bağımsız analiz cümlesi>", "<gerekirse ikinci TAM cümle>"],
+  "risks": ["<90-150 karakterlik TAM ve bağımsız risk cümlesi>", "<gerekirse ikinci TAM cümle>"],
   "verdict": "<HIGH CONVICTION | ATTRACTIVE | WATCH | WEAKENING içinden biri>"
 }}
 """
