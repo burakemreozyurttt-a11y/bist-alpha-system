@@ -134,8 +134,8 @@ VERİ:
 
 def main():
     now = datetime.now(TR_TZ)
-    is_manual_run = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-    if now.weekday() != 4 and not is_manual_run:  # 4 = Cuma
+    # Daily workflow elle çalıştırılsa bile haftalık özet yalnızca Cuma gider.
+    if now.weekday() != 4:  # 4 = Cuma
         print("Bugün Cuma değil, haftalık özet atlanıyor.")
         return
 
