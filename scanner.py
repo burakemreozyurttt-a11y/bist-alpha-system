@@ -1321,6 +1321,20 @@ tutarlı olduğuna karar vermek, çelişkileri tespit etmek ve dengeli, nihai
 bir karar vermek. Tek bir tarafı kayırma; ikna edici olan neyse ona göre
 karar ver.
 
+DEĞERLEME DİSİPLİNİ — ÇOK ÖNEMLİ:
+- Base FV'yi mevcut piyasa fiyatını takip edecek şekilde mekanik olarak yukarı
+  taşıma. Adil değer; kârlılık, büyüme, bilanço, nakit akışı, çarpanlar ve
+  doğrulanabilir katalizörlerdeki değişimle gerekçelendirilmelidir.
+- Mevcut fiyat Base FV'ye ulaşmış veya onu aşmışsa, şirketi sıfırdan yeniden
+  değerlendir. Yeni veriler gerçekten daha yüksek bir ana senaryoyu
+  destekliyorsa Base FV'yi revize et; desteklemiyorsa eski/uygun adil değeri
+  koru. Sistem daha sonra bu şirketi fırsat listesinden çıkaracaktır.
+- Bull FV tek başına fırsat sayılmaz. Ana fırsat değerlendirmesinde Base FV
+  esas alınır.
+- Alpha puanını verirken yalnızca şirket kalitesini değil, mevcut fiyatta
+  kalan makul değerleme alanını da dikkate al. İyi şirket ile iyi fırsat aynı
+  şey değildir.
+
 {data_block}
 
 --- AYI ANALİSTİNİN GÖRÜŞÜ ---
@@ -2310,40 +2324,123 @@ def _safe_float(v):
 
 FINAL_ALPHA_MIN_ACTIVE = 45.0
 
+# Fundamental Opportunity Gate
+# ----------------------------
+# Sistemin ana amacı yalnızca iyi şirket bulmak değil; güncel temel analize
+# göre henüz yeterince fiyatlanmamış şirketleri bulmaktır. Bu yüzden teknik
+# skor sıralamaya girmeden ÖNCE üç koşul aranır:
+#   1) Fundamental kalite asgari seviyenin üzerinde olmalı.
+#   2) Güncel Base FV, mevcut fiyatın anlamlı ölçüde üzerinde olmalı.
+#   3) Final Alpha asgari aktif eşiği geçmeli.
+# Böylece teknik skor, güncel Base değerini zaten fiyatlamış bir hisseyi
+# yeniden TOP3/TOP10'a taşıyamaz.
+MIN_FUNDAMENTAL_SCORE_ACTIVE = 55.0
+MIN_BASE_UPSIDE_PCT_ACTIVE = 8.0
+
+
+def _opportunity_gate(item, fundamental, final_alpha):
+    price = _safe_float(item.get("price"))
+    base_fv = _safe_float(item.get("base_fv"))
+
+    if price is None or price <= 0:
+        return False, None, "güncel fiyat yok"
+    if base_fv is None or base_fv <= 0:
+        return False, None, "Base FV yok/geçersiz"
+
+    base_upside_pct = ((base_fv / price) - 1.0) * 100.0
+
+    if fundamental < MIN_FUNDAMENTAL_SCORE_ACTIVE:
+        return False, base_upside_pct, (
+            f"fundamental skor {fundamental:.1f} < {MIN_FUNDAMENTAL_SCORE_ACTIVE:.1f}"
+        )
+
+    if base_upside_pct < MIN_BASE_UPSIDE_PCT_ACTIVE:
+        if base_upside_pct <= 0:
+            reason = (
+                f"güncel fiyat Base FV'yi fiyatlamış/aşmış "
+                f"(Base fark %{base_upside_pct:.1f})"
+            )
+        else:
+            reason = (
+                f"Base fark yalnızca %{base_upside_pct:.1f}; "
+                f"asgari fırsat eşiği %{MIN_BASE_UPSIDE_PCT_ACTIVE:.1f}"
+            )
+        return False, base_upside_pct, reason
+
+    if final_alpha < FINAL_ALPHA_MIN_ACTIVE:
+        return False, base_upside_pct, (
+            f"Final Alpha {final_alpha:.1f} < {FINAL_ALPHA_MIN_ACTIVE:.1f}"
+        )
+
+    return True, base_upside_pct, "uygun"
+
 
 def assign_final_alpha_scores(analyzed):
-    """V5: Kullanıcıya görünen TEK skor Final Alpha Score'dur.
+    """Final Alpha + Fundamental Opportunity Gate.
 
-    Bear/Bull/CRO'nun ürettiği fundamental puan arka planda fundamental_score
-    adıyla korunur. Teknik motor kendi technical_score'unu üretir. Nihai skor:
+    Akış:
+        1) CRO'nun güncel fundamental analizi ve Base FV'si alınır.
+        2) Fundamental fırsat filtresi uygulanır.
+        3) Yalnızca filtreden geçen hisseler için Final Alpha sıralaması yapılır.
 
-        Final Alpha = Fundamental %70 + Teknik %30
+    Final Alpha = Fundamental %70 + Teknik %30
 
-    Sıralama, TOP3/TOP10/Reserve ve haftalık geçmiş bu tek skor üzerinden
-    yürür. Alt skorlar yalnızca log/debug ve radar açıklanabilirliği içindir.
+    Teknik katman bir *timing/ranking overlay*'idir. Tek başına bir şirketi
+    fırsat haline getiremez ve fiyat Base FV'yi zaten tüketmişse o şirketi
+    aktif listeye geri sokamaz.
     """
     for item in analyzed:
         fundamental = _safe_float(item.get("fundamental_score"))
         if fundamental is None:
             fundamental = _safe_float(item.get("alpha_score")) or 0.0
         technical = _safe_float(item.get("technical_score")) or 50.0
-        final_alpha = max(0.0, min(100.0, fundamental * TECH_FUNDAMENTAL_WEIGHT + technical * TECH_TECHNICAL_WEIGHT))
+
+        final_alpha = max(
+            0.0,
+            min(
+                100.0,
+                fundamental * TECH_FUNDAMENTAL_WEIGHT
+                + technical * TECH_TECHNICAL_WEIGHT,
+            ),
+        )
+
+        eligible, base_upside_pct, reason = _opportunity_gate(
+            item, fundamental, final_alpha
+        )
+
         item["fundamental_score"] = round(fundamental, 1)
         item["final_alpha_score"] = round(final_alpha, 1)
-        item["alpha_score"] = round(final_alpha, 1)  # public / history / weekly canonical score
-        item["quality_eligible"] = final_alpha >= FINAL_ALPHA_MIN_ACTIVE
-        item["top3_eligible"] = item["quality_eligible"]
+        item["alpha_score"] = round(final_alpha, 1)
+        item["base_upside_pct"] = (
+            round(base_upside_pct, 1) if base_upside_pct is not None else None
+        )
+        item["quality_eligible"] = bool(eligible)
+        item["top3_eligible"] = bool(eligible)
+        item["exclusion_reason"] = None if eligible else reason
+
+        status = "GEÇTİ" if eligible else "ELENDİ"
+        upside_txt = (
+            "N/A" if base_upside_pct is None else f"%{base_upside_pct:.1f}"
+        )
+        print(
+            f"  [OPPORTUNITY-GATE {item.get('ticker')}] {status} | "
+            f"fundamental={fundamental:.1f} | teknik={technical:.1f} | "
+            f"final={final_alpha:.1f} | Base fark={upside_txt} | neden={reason}"
+        )
 
     active = [x for x in analyzed if x.get("quality_eligible")]
     excluded = [x for x in analyzed if not x.get("quality_eligible")]
+
+    # Gate'ten geçenler arasında sıralama yine TEK public skor olan Final Alpha.
     active.sort(key=lambda x: x.get("alpha_score", 0), reverse=True)
     excluded.sort(key=lambda x: x.get("alpha_score", 0), reverse=True)
+
     for i, item in enumerate(active, 1):
         item["rank"] = i
     for item in excluded:
         item["rank"] = None
-    return active, excluded
 
+    return active, excluded
 
 def build_report(ranked, last_seen_map, total_scanned, deep_count, previous_day_top10_map=None, quality_excluded=None):
     """Telegram görseli üretilemezse kullanılacak sade metin fallback raporu.
@@ -2378,7 +2475,7 @@ def build_report(ranked, last_seen_map, total_scanned, deep_count, previous_day_
         for i, item in enumerate(reserve, 11):
             lines.append(f"{i}. {item['ticker']} | Alpha {item.get('alpha_score','N/A')} | Base {fmt(item.get('base_fv'))}")
     lines.append("")
-    lines.append("Not: Alpha Score; sistemin fundamental (%70) ve teknik (%30) bileşenlerini tek nihai skorda birleştirir. Alt skorlar raporda ayrıca gösterilmez.")
+    lines.append("Not: Listeye girişte güncel Base değerleme ve fundamental uygunluk filtresi uygulanır; Alpha Score, bu filtreden geçen adayları fundamental (%70) ve teknik (%30) bileşenlerle sıralar.")
     lines.append("Bu içerik yalnızca karşılaştırmalı analiz özetidir; alım-satım çağrısı veya kişiye özel yatırım tavsiyesi içermez.")
     return "\n".join(lines)
 
@@ -2455,9 +2552,9 @@ def main():
     save_foreign_ratio_history()
 
     ranked, quality_excluded = assign_final_alpha_scores(analyzed)
-    print(f"Final Alpha Engine: {len(ranked)}/{len(analyzed)} aday aktif eşikte; ranking tek Final Alpha Score'a göre yapıldı.")
+    print(f"Final Alpha Engine: {len(ranked)}/{len(analyzed)} aday Fundamental Opportunity Gate'i geçti; ranking geçenler arasında tek Final Alpha Score'a göre yapıldı.")
     for item in ranked[:15]:
-        print(f"  [FINAL-ALPHA {item['ticker']}] fundamental={item.get('fundamental_score')} | teknik={item.get('technical_score')} | final={item.get('alpha_score')}")
+        print(f"  [FINAL-ALPHA {item['ticker']}] fundamental={item.get('fundamental_score')} | teknik={item.get('technical_score')} | final={item.get('alpha_score')} | Base fark=%{item.get('base_upside_pct')}")
     top10_cap_counts = {}
     for item in ranked[:10]:
         bucket = item.get("cap_bucket", "Bilinmiyor")
