@@ -26,6 +26,9 @@ jobs:
       - name: Bağımlılıkları yükle
         run: pip install -r requirements.txt
 
+      - name: Görsel rapor tarayıcısını kur
+        run: python -m playwright install --with-deps chromium
+
       - name: Taramayı çalıştır
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
