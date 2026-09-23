@@ -124,13 +124,18 @@ RADAR_THEMES = [
 ]
 
 
-def radar_svg(scores, theme=None, size=220):
-    theme = theme or RADAR_THEMES[0]
+def radar_svg(scores, rank=1, size=210):
     labels = list(scores.keys())
     values = [scores[k] for k in labels]
+    themes = {
+        1: ("#15986b", "rgba(21,152,107,.19)"),
+        2: ("#3d7fe7", "rgba(61,127,231,.19)"),
+        3: ("#ef922f", "rgba(239,146,47,.19)"),
+    }
+    stroke, fill = themes.get(rank, themes[1])
     cx = cy = size / 2
-    radius = size * 0.285
-    label_r = size * 0.40
+    radius = size * 0.31
+    label_r = size * 0.355
 
     def pt(angle_deg, r):
         a = math.radians(angle_deg - 90)
@@ -140,31 +145,31 @@ def radar_svg(scores, theme=None, size=220):
     grid = []
     for frac in (0.25, 0.5, 0.75, 1.0):
         pts = " ".join(f"{pt(a, radius*frac)[0]:.1f},{pt(a, radius*frac)[1]:.1f}" for a in angles)
-        grid.append(f'<polygon points="{pts}" fill="none" stroke="#cfdae5" stroke-width="1"/>')
+        grid.append(f'<polygon points="{pts}" fill="none" stroke="#d2dde7" stroke-width="1"/>')
     axes = []
     for a in angles:
         x, y = pt(a, radius)
-        axes.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="#d7e1ea" stroke-width="1"/>')
+        axes.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="#d9e2eb" stroke-width="1"/>')
 
     data_pts = " ".join(
-        f"{pt(a, radius * (_clamp(v)/100))[0]:.1f},{pt(a, radius * (_clamp(v)/100))[1]:.1f}"
-        for a, v in zip(angles, values)
+        f"{pt(a, radius * (_clamp(val)/100))[0]:.1f},{pt(a, radius * (_clamp(val)/100))[1]:.1f}"
+        for a, val in zip(angles, values)
     )
     label_parts = []
     for a, label in zip(angles, labels):
         x, y = pt(a, label_r)
         anchor = "middle"
-        if x < cx - 12:
-            anchor = "end"
-        elif x > cx + 12:
-            anchor = "start"
-        label_parts.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" class="radar-label">{label}</text>')
+        if x < cx - 10: anchor = "end"
+        elif x > cx + 10: anchor = "start"
+        label_parts.append(
+            f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" dominant-baseline="middle" class="radar-label">{label}</text>'
+        )
 
     return (
         f'<svg viewBox="0 0 {size} {size}" class="radar-svg" xmlns="http://www.w3.org/2000/svg">'
-        + ''.join(grid) + ''.join(axes)
-        + f'<polygon points="{data_pts}" fill="{theme["fill"]}" stroke="{theme["stroke"]}" stroke-width="2.2"/>'
-        + ''.join(label_parts) + '</svg>'
+        + "".join(grid) + "".join(axes)
+        + f'<polygon points="{data_pts}" fill="{fill}" stroke="{stroke}" stroke-width="2.2"/>'
+        + "".join(label_parts) + '</svg>'
     )
 
 
@@ -294,7 +299,6 @@ def build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_sca
         radar = compute_radar_scores(item)
         delta, delta_class = rank_delta(item, idx, last_seen_map)
         spark_vals = fetch_week_price_series(item.get("ticker"))
-        theme = RADAR_THEMES[(idx - 1) % len(RADAR_THEMES)]
         cards.append({
             "rank": idx,
             "ticker": item.get("ticker"),
@@ -311,7 +315,7 @@ def build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_sca
             "delta_class": delta_class,
             "profile": profile_label(item.get("alpha_score")),
             "profile_class": profile_class(item.get("alpha_score")),
-            "radar_svg": radar_svg(radar, theme),
+            "radar_svg": radar_svg(radar, rank=idx),
             "sparkline_svg": sparkline_svg(spark_vals),
             "radar": radar,
             "analysis_summary": _profile_summary(item, radar),
