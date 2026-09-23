@@ -2365,18 +2365,18 @@ def build_report(ranked, last_seen_map, total_scanned, deep_count, previous_day_
         lines.append(f"{['🥇','🥈','🥉'][i-1]} {i}. {item['ticker']} [{item.get('cap_bucket','—')}]")
         lines.append(f"Alpha Score: {item.get('alpha_score','N/A')}/100 | Veri Güveni: {confidence_label(item.get('data_confidence'))}")
         lines.append(f"Analitik Profil: {profile_label(item.get('alpha_score'))}")
-        lines.append(f"Fiyat: {fmt(item.get('price'))} TL | Bear/Base/Bull: {fmt(item.get('bear_fv'))} / {fmt(item.get('base_fv'))} / {fmt(item.get('bull_fv'))}")
+        lines.append(f"Fiyat: {fmt(item.get('price'))} TL | Downside/Base/Upside: {fmt(item.get('bear_fv'))} / {fmt(item.get('base_fv'))} / {fmt(item.get('bull_fv'))}")
         lines.append(f"Önceki Sıra: {prev_rank}")
         lines.append("")
 
     lines.append("📋 TOP 10 — FINAL ALPHA SCORE")
     for i, item in enumerate(top10, 1):
-        lines.append(f"{i}. {item['ticker']} | Alpha {item.get('alpha_score','N/A')} | Fiyat {fmt(item.get('price'))} | Base FV {fmt(item.get('base_fv'))}")
+        lines.append(f"{i}. {item['ticker']} | Alpha {item.get('alpha_score','N/A')} | Fiyat {fmt(item.get('price'))} | Base {fmt(item.get('base_fv'))}")
     if reserve:
         lines.append("")
         lines.append("🧾 RESERVE (11–15)")
         for i, item in enumerate(reserve, 11):
-            lines.append(f"{i}. {item['ticker']} | Alpha {item.get('alpha_score','N/A')} | Base FV {fmt(item.get('base_fv'))}")
+            lines.append(f"{i}. {item['ticker']} | Alpha {item.get('alpha_score','N/A')} | Base {fmt(item.get('base_fv'))}")
     lines.append("")
     lines.append("Not: Alpha Score; sistemin fundamental (%70) ve teknik (%30) bileşenlerini tek nihai skorda birleştirir. Alt skorlar raporda ayrıca gösterilmez.")
     lines.append("Bu içerik yalnızca karşılaştırmalı analiz özetidir; alım-satım çağrısı veya kişiye özel yatırım tavsiyesi içermez.")
@@ -2429,6 +2429,11 @@ def main():
         return
 
     print(f"Round 2: {len(candidates_df)} aday için Gemini analizi başlıyor...")
+    if "cap_bucket" in candidates_df.columns:
+        cap_counts = candidates_df["cap_bucket"].value_counts().to_dict()
+        print("[ÖLÇEK-DAĞILIMI ROUND2] " + " | ".join(
+            f"{bucket}={cap_counts.get(bucket, 0)}" for bucket in ["Büyük", "Orta", "Küçük"]
+        ))
     analyzed = round2_deep_analysis(candidates_df)
     if not analyzed:
         send_telegram_message("⚠️ Gemini analizinden sonuç alınamadı, lütfen logları kontrol et.")
@@ -2453,6 +2458,13 @@ def main():
     print(f"Final Alpha Engine: {len(ranked)}/{len(analyzed)} aday aktif eşikte; ranking tek Final Alpha Score'a göre yapıldı.")
     for item in ranked[:15]:
         print(f"  [FINAL-ALPHA {item['ticker']}] fundamental={item.get('fundamental_score')} | teknik={item.get('technical_score')} | final={item.get('alpha_score')}")
+    top10_cap_counts = {}
+    for item in ranked[:10]:
+        bucket = item.get("cap_bucket", "Bilinmiyor")
+        top10_cap_counts[bucket] = top10_cap_counts.get(bucket, 0) + 1
+    print("[ÖLÇEK-DAĞILIMI TOP10] " + " | ".join(
+        f"{bucket}={top10_cap_counts.get(bucket, 0)}" for bucket in ["Büyük", "Orta", "Küçük"]
+    ))
 
     today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
     full_history = load_full_history()
