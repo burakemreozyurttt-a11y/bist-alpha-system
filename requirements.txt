@@ -1,5 +1,6 @@
 requests==2.32.3
 pandas==2.2.3
+numpy>=1.26,<3
 openpyxl==3.1.5
 isyatirimhisse==5.0.1
 google-genai==1.2.0
@@ -8,3 +9,5 @@ pypdf==5.9.0
 beautifulsoup4==4.12.3
 html5lib==1.1
 borsapy==0.11.0
+Jinja2>=3.1,<4
+playwright>=1.45,<2
