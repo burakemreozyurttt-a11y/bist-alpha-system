@@ -436,7 +436,13 @@ def _env():
     return Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), autoescape=select_autoescape(["html", "xml"]))
 
 
-def render_html_to_png(template_name, context, output_path, viewport, scale_factor=4):
+def render_html_to_png(template_name, context, output_path, viewport, requested_scale=4.0):
+    """HTML raporu Telegram sendPhoto limitlerine göre mümkün olan en yüksek kalitede PNG üretir.
+
+    Telegram sendPhoto: width + height <= 10000 px ve foto <= 10 MB.
+    Önce CSS boyutu ölçülür, sonra güvenli scale dinamik hesaplanır.
+    Dosya 9.5 MB'ı aşarsa otomatik biraz daha düşük scale ile yeniden render edilir.
+    """
     env = _env()
     html = env.get_template(template_name).render(**context)
     html_path = OUTPUT_DIR / (Path(output_path).stem + ".html")
@@ -444,27 +450,76 @@ def render_html_to_png(template_name, context, output_path, viewport, scale_fact
 
     from playwright.sync_api import sync_playwright
     import shutil
+
+    TELEGRAM_DIM_SUM_LIMIT = 10000
+    SAFE_DIM_SUM = 9400  # küçük güvenlik payı
+    SAFE_FILE_BYTES = int(9.5 * 1024 * 1024)
+
     with sync_playwright() as p:
         launch_kwargs = {"headless": True}
         system_chromium = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
         if system_chromium:
             launch_kwargs["executable_path"] = system_chromium
         browser = p.chromium.launch(**launch_kwargs)
-        page = browser.new_page(viewport=viewport, device_scale_factor=scale_factor)
-        page.set_content(html, wait_until="load")
+
+        # 1x ölçüm: full_page gerçek CSS genişlik/yüksekliği
+        measure_page = browser.new_page(viewport=viewport, device_scale_factor=1)
+        measure_page.set_content(html, wait_until="load")
         try:
-            page.wait_for_load_state("networkidle", timeout=7000)
+            measure_page.wait_for_load_state("networkidle", timeout=7000)
         except Exception:
             pass
-        page.screenshot(path=str(output_path), full_page=True)
-        browser.close()
-    return str(output_path)
+        dims = measure_page.evaluate("""() => ({
+            width: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
+            height: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)
+        })""")
+        measure_page.close()
 
+        css_w = max(1, int(dims.get("width", viewport.get("width", 1080))))
+        css_h = max(1, int(dims.get("height", viewport.get("height", 1600))))
+
+        # Telegram sınırına göre mümkün olan en yüksek scale.
+        max_scale_by_dims = SAFE_DIM_SUM / float(css_w + css_h)
+        scale = min(float(requested_scale), max_scale_by_dims)
+        scale = max(1.0, scale)
+
+        # 0.05 adımla aşağı yuvarla; sınırda kayan nokta sürprizi olmasın.
+        scale = math.floor(scale * 20) / 20.0
+
+        for attempt in range(5):
+            page = browser.new_page(viewport=viewport, device_scale_factor=scale)
+            page.set_content(html, wait_until="load")
+            try:
+                page.wait_for_load_state("networkidle", timeout=7000)
+            except Exception:
+                pass
+            page.screenshot(path=str(output_path), full_page=True)
+            page.close()
+
+            file_size = Path(output_path).stat().st_size
+            out_w = int(round(css_w * scale))
+            out_h = int(round(css_h * scale))
+            dim_sum = out_w + out_h
+
+            print(
+                f"[GÖRSEL-KALİTE] CSS={css_w}x{css_h} | scale={scale:.2f}x | "
+                f"PNG≈{out_w}x{out_h} | toplam={dim_sum} | boyut={file_size/1024/1024:.2f} MB"
+            )
+
+            if dim_sum <= TELEGRAM_DIM_SUM_LIMIT and file_size <= SAFE_FILE_BYTES:
+                browser.close()
+                return str(output_path)
+
+            # Dosya büyükse veya boyut sınırı aşılmışsa kademeli küçült.
+            scale = max(1.0, math.floor(scale * 0.88 * 20) / 20.0)
+
+        browser.close()
+        raise RuntimeError("Telegram photo sınırlarına uygun görsel boyutu üretilemedi.")
 
 def render_daily_report(ranked, last_seen_map, previous_day_top10_map, total_scanned, deep_count):
     ctx = build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_scanned, deep_count)
     out = OUTPUT_DIR / f"beiq_daily_{datetime.now(TR_TZ).strftime('%Y%m%d')}.png"
-    return render_html_to_png("daily_report.html", ctx, out, {"width": 1080, "height": 1600}, scale_factor=4)
+    return render_html_to_png("daily_report.html", ctx, out, {"width": 1080, "height": 1600}, requested_scale=4.0)
 
 
 def build_weekly_context(entries, agg, summary_text=None):
@@ -532,4 +587,4 @@ def build_weekly_context(entries, agg, summary_text=None):
 def render_weekly_report(entries, agg, summary_text=None):
     ctx = build_weekly_context(entries, agg, summary_text)
     out = OUTPUT_DIR / f"beiq_weekly_{datetime.now(TR_TZ).strftime('%Y%m%d')}.png"
-    return render_html_to_png("weekly_report.html", ctx, out, {"width": 1080, "height": 1380}, scale_factor=4)
+    return render_html_to_png("weekly_report.html", ctx, out, {"width": 1080, "height": 1380}, requested_scale=4.0)
