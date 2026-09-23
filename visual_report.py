@@ -319,8 +319,8 @@ def build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_sca
             "sparkline_svg": sparkline_svg(spark_vals),
             "radar": radar,
             "analysis_summary": _profile_summary(item, radar),
-            "positives": _public_points(item.get("catalysts") or [], 3),
-            "risks": _public_points(item.get("risks") or [], 3),
+            "positives": _public_points(item.get("catalysts") or [], 2),
+            "risks": _public_points(item.get("risks") or [], 2),
         })
 
     rows = []
