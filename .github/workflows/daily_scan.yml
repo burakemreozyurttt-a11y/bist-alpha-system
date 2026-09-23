@@ -2,18 +2,16 @@ name: BIST Daily Scan
 
 on:
   schedule:
-    # 15:30 UTC = 18:30 Türkiye saati (TR yıl boyunca UTC+3, DST yok)
-    # Pazartesi-Cuma (1-5) çalışır, hafta sonu (0,6) çalışmaz
     - cron: "30 15 * * 1-5"
-  workflow_dispatch: {}   # Manuel olarak "Run workflow" ile de tetiklenebilir
+  workflow_dispatch: {}
 
 permissions:
-  contents: write   # state.json'u geri commit'leyebilmek için
+  contents: write
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 330   # 5.5 saat — kodun kendi 5 saatlik bütçesinden biraz fazla, güvenlik payı
+    timeout-minutes: 330
     steps:
       - name: Repo'yu çek
         uses: actions/checkout@v4
@@ -43,10 +41,10 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python weekly_summary.py
 
-      - name: state.json, history.json ve bilanço önbelleğini commit'le
+      - name: State, case geçmişi ve önbellekleri commit'le
         run: |
           git config user.name "bist-alpha-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add state.json history.json financials_cache.json report_excerpts_cache.json dead_tickers_cache.json foreign_ratio_history.json
+          git add state.json history.json financials_cache.json report_excerpts_cache.json dead_tickers_cache.json foreign_ratio_history.json active_cases.json case_history.json case_daily_history.json 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Günlük tarama güncellemesi $(date -u +'%Y-%m-%d')"
           git push
