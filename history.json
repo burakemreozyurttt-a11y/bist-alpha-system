@@ -1057,19 +1057,19 @@
         "technical_coverage": 0.8,
         "technical_available_signals": 7,
         "bear_fv": 35.0,
-        "base_fv": 52.0,
-        "bull_fv": 65.0,
+        "base_fv": 48.0,
+        "bull_fv": 62.0,
         "verdict": "ATTRACTIVE"
       },
       {
         "ticker": "TUPRS",
         "rank": 2,
-        "alpha_score": 72,
+        "alpha_score": 74,
         "technical_score": 64.0,
-        "combined_score": 69.6,
+        "combined_score": 71.0,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 330.0,
+        "bear_fv": 310.0,
         "base_fv": 440.0,
         "bull_fv": 520.0,
         "verdict": "ATTRACTIVE"
@@ -1082,22 +1082,22 @@
         "combined_score": 68.8,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 48.0,
+        "bear_fv": 50.0,
         "base_fv": 65.0,
-        "bull_fv": 82.0,
+        "bull_fv": 78.0,
         "verdict": "WATCH"
       },
       {
         "ticker": "ARDYZ",
         "rank": 4,
-        "alpha_score": 72,
+        "alpha_score": 74,
         "technical_score": 37.0,
-        "combined_score": 61.5,
+        "combined_score": 62.9,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 52.0,
-        "base_fv": 82.0,
-        "bull_fv": 105.0,
+        "bear_fv": 50.0,
+        "base_fv": 78.5,
+        "bull_fv": 95.0,
         "verdict": "ATTRACTIVE"
       },
       {
@@ -1108,9 +1108,9 @@
         "combined_score": 60.6,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 28.0,
-        "base_fv": 65.0,
-        "bull_fv": 95.0,
+        "bear_fv": 25.0,
+        "base_fv": 52.0,
+        "bull_fv": 75.0,
         "verdict": "ATTRACTIVE"
       },
       {
@@ -1121,9 +1121,9 @@
         "combined_score": 60.6,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 8.5,
-        "base_fv": 12.0,
-        "bull_fv": 15.0,
+        "bear_fv": 8.0,
+        "base_fv": 12.5,
+        "bull_fv": 16.0,
         "verdict": "ATTRACTIVE"
       },
       {
@@ -1147,9 +1147,9 @@
         "combined_score": 57.6,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 30.0,
-        "base_fv": 39.5,
-        "bull_fv": 48.0,
+        "bear_fv": 32.5,
+        "base_fv": 42.0,
+        "bull_fv": 50.0,
         "verdict": "WATCH"
       },
       {
@@ -1160,9 +1160,9 @@
         "combined_score": 54.9,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 7.2,
-        "base_fv": 11.5,
-        "bull_fv": 15.0,
+        "bear_fv": 6.5,
+        "base_fv": 12.0,
+        "bull_fv": 16.5,
         "verdict": "ATTRACTIVE"
       },
       {
@@ -1174,9 +1174,9 @@
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
         "bear_fv": 12.5,
-        "base_fv": 16.0,
-        "bull_fv": 25.0,
-        "verdict": "ATTRACTIVE"
+        "base_fv": 19.5,
+        "bull_fv": 28.0,
+        "verdict": "WATCH"
       },
       {
         "ticker": "YYLGD",
@@ -1186,9 +1186,9 @@
         "combined_score": 53.6,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 6.5,
+        "bear_fv": 6.0,
         "base_fv": 10.5,
-        "bull_fv": 13.5,
+        "bull_fv": 14.0,
         "verdict": "ATTRACTIVE"
       },
       {
@@ -1199,9 +1199,9 @@
         "combined_score": 52.8,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 34.0,
+        "bear_fv": 35.0,
         "base_fv": 45.0,
-        "bull_fv": 58.0,
+        "bull_fv": 55.0,
         "verdict": "WATCH"
       },
       {
@@ -1212,8 +1212,8 @@
         "combined_score": 52.1,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 195.0,
-        "base_fv": 275.0,
+        "bear_fv": 180.0,
+        "base_fv": 300.0,
         "bull_fv": 380.0,
         "verdict": "ATTRACTIVE"
       },
@@ -1225,22 +1225,22 @@
         "combined_score": 50.9,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 18.5,
-        "base_fv": 26.0,
-        "bull_fv": 35.0,
-        "verdict": "WATCH"
+        "bear_fv": 19.5,
+        "base_fv": 28.0,
+        "bull_fv": 38.0,
+        "verdict": "ATTRACTIVE"
       },
       {
-        "ticker": "ARSAN",
+        "ticker": "ARMGD",
         "rank": 15,
-        "alpha_score": 52,
-        "technical_score": 43.5,
-        "combined_score": 49.4,
+        "alpha_score": 62,
+        "technical_score": 17.0,
+        "combined_score": 48.5,
         "technical_coverage": 0.88,
         "technical_available_signals": 8,
-        "bear_fv": 2.2,
-        "base_fv": 4.5,
-        "bull_fv": 8.5,
+        "bear_fv": 85.0,
+        "base_fv": 125.0,
+        "bull_fv": 180.0,
         "verdict": "WATCH"
       }
     ]
