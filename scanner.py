@@ -1523,6 +1523,26 @@ def _build_candidate_for_agents(row, report_excerpt=None, report_period=None):
 TECH_FUNDAMENTAL_WEIGHT = 0.70
 TECH_TECHNICAL_WEIGHT = 0.30
 
+# --------------------------------------------------------------------------
+# FUNDAMENTAL QUALITY GUARDRAIL (v3)
+# --------------------------------------------------------------------------
+# Teknik katman bir "aday yaratma" motoru değildir; yalnızca fundamental
+# olarak yeterli kaliteyi geçen adayların kendi aralarındaki sırasını etkiler.
+# Böylece çok yüksek teknik skor, düşük fundamental alpha / çok düşük kalan
+# fundamental upside / WEAKENING gibi durumları maskeleyemez.
+MIN_ACTIVE_ALPHA = 55.0
+MIN_ACTIVE_BASE_UPSIDE_PCT = 5.0
+MIN_ACTIVE_DATA_CONFIDENCE = 60.0
+BLOCKED_ACTIVE_VERDICTS = {"WEAKENING"}
+
+# TOP 3 için daha yüksek standart: güçlü fundamental görüş + anlamlı kalan
+# upside + yeterli veri güveni gerekir. WATCH bir şirket, teknik skoru çok
+# yüksek olsa bile TOP 3'e taşınmaz.
+TOP3_MIN_ALPHA = 65.0
+TOP3_MIN_BASE_UPSIDE_PCT = 8.0
+TOP3_MIN_DATA_CONFIDENCE = 70.0
+TOP3_ALLOWED_VERDICTS = {"HIGH CONVICTION", "ATTRACTIVE"}
+
 # %30'luk teknik payın kendi içindeki dağılımı (toplam = 1.0)
 # İlk 6'sı kullanıcının fikirleri, son 3'ü (sector_rs, foreign_interest,
 # avwap_52wk_high) Claude'un önerdiği ek kurumsal-düzey sinyaller.
@@ -2265,10 +2285,100 @@ def fmt(v, suffix=""):
         return str(v)
 
 
-def build_report(ranked, last_seen_map, total_scanned, deep_count, previous_day_top10_map=None):
+def _safe_float(v):
+    try:
+        if v is None or v == "N/A":
+            return None
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def apply_fundamental_quality_guardrail(item):
+    """Bir Round-2 adayının aktif fırsat havuzuna girip giremeyeceğini belirler.
+
+    Teknik skor bu kararı vermez. Amaç; teknik overlay'in fundamental kalite
+    eşiğini atlayarak düşük-upside / düşük-alpha / zayıflayan tezleri yukarı
+    taşımasını engellemektir.
+    """
+    alpha = _safe_float(item.get("alpha_score"))
+    conf = _safe_float(item.get("data_confidence"))
+    price = _safe_float(item.get("price"))
+    base_fv = _safe_float(item.get("base_fv"))
+    verdict = str(item.get("verdict") or "").strip().upper()
+
+    upside = None
+    if price is not None and price > 0 and base_fv is not None:
+        upside = (base_fv / price - 1.0) * 100.0
+
+    reasons = []
+    if alpha is None or alpha < MIN_ACTIVE_ALPHA:
+        reasons.append(f"Alpha<{MIN_ACTIVE_ALPHA:.0f}")
+    if conf is None or conf < MIN_ACTIVE_DATA_CONFIDENCE:
+        reasons.append(f"Confidence<{MIN_ACTIVE_DATA_CONFIDENCE:.0f}")
+    if upside is None:
+        reasons.append("Base Upside=N/A")
+    elif upside < MIN_ACTIVE_BASE_UPSIDE_PCT:
+        reasons.append(f"Base Upside<{MIN_ACTIVE_BASE_UPSIDE_PCT:.0f}%")
+    if verdict in BLOCKED_ACTIVE_VERDICTS:
+        reasons.append(f"Verdict={verdict}")
+
+    active_eligible = not reasons
+
+    top3_reasons = []
+    if not active_eligible:
+        top3_reasons.append("Aktif kalite eşiğini geçmedi")
+    else:
+        if alpha is None or alpha < TOP3_MIN_ALPHA:
+            top3_reasons.append(f"Alpha<{TOP3_MIN_ALPHA:.0f}")
+        if conf is None or conf < TOP3_MIN_DATA_CONFIDENCE:
+            top3_reasons.append(f"Confidence<{TOP3_MIN_DATA_CONFIDENCE:.0f}")
+        if upside is None or upside < TOP3_MIN_BASE_UPSIDE_PCT:
+            top3_reasons.append(f"Base Upside<{TOP3_MIN_BASE_UPSIDE_PCT:.0f}%")
+        if verdict not in TOP3_ALLOWED_VERDICTS:
+            top3_reasons.append(f"Verdict={verdict or 'N/A'}")
+
+    item["base_upside_pct"] = round(upside, 1) if upside is not None else None
+    item["quality_eligible"] = active_eligible
+    item["quality_reasons"] = reasons
+    item["top3_eligible"] = active_eligible and not top3_reasons
+    item["top3_reasons"] = top3_reasons
+    return item
+
+
+def rank_with_quality_guardrail(analyzed):
+    """Aktif havuzu ve kalite eşiği dışında kalanları ayırır.
+
+    Aktif havuz kendi içinde birleşik skora göre sıralanır. TOP 3 slotları ise
+    yalnızca daha sıkı TOP3 guardrail'ini geçen şirketlerden doldurulur; kalan
+    aktif şirketler 4. sıradan itibaren birleşik skora göre devam eder.
+    """
+    for item in analyzed:
+        apply_fundamental_quality_guardrail(item)
+
+    active = [x for x in analyzed if x.get("quality_eligible")]
+    excluded = [x for x in analyzed if not x.get("quality_eligible")]
+    active.sort(key=lambda x: x.get("combined_score", 0), reverse=True)
+    excluded.sort(key=lambda x: x.get("combined_score", 0), reverse=True)
+
+    top3_candidates = [x for x in active if x.get("top3_eligible")][:3]
+    top3_ids = {id(x) for x in top3_candidates}
+    remainder = [x for x in active if id(x) not in top3_ids]
+    ranked = top3_candidates + remainder
+
+    for i, item in enumerate(ranked, 1):
+        item["rank"] = i
+    for item in excluded:
+        item["rank"] = None
+
+    return ranked, excluded
+
+
+def build_report(ranked, last_seen_map, total_scanned, deep_count, previous_day_top10_map=None, quality_excluded=None):
     today = datetime.now(TR_TZ).strftime("%d.%m.%Y")
     prev_map = last_seen_map   # tez/rank geçmişi için en son görülen kayıt
     previous_day_top10_map = previous_day_top10_map or {}
+    quality_excluded = quality_excluded or []
 
     lines = []
     lines.append("📊 BIST FUNDAMENTAL ALPHA — GÜNLÜK TARAMA")
@@ -2381,11 +2491,22 @@ def build_report(ranked, last_seen_map, total_scanned, deep_count, previous_day_
             lines.append(
                 f"{i}. {item['ticker']} | Birleşik {item.get('combined_score','N/A')} | "
                 f"Alpha {item.get('alpha_score','N/A')} | Teknik {item.get('technical_score','N/A')} | "
-                f"Base FV {fmt(item.get('base_fv'))}"
+                f"Upside %{item.get('base_upside_pct','N/A')} | Base FV {fmt(item.get('base_fv'))}"
             )
         lines.append("")
 
-    lines.append("Not: Sıralama %70 fundamental + %30 teknik overlay içerir. Teknik overlay yalnızca adayları sıralamaya yardımcı olur; entry/stop/pozisyon kararı kullanıcı tarafından değerlendirilmelidir.")
+    if quality_excluded:
+        lines.append("🚧 FUNDAMENTAL QUALITY GUARDRAIL — AKTİF LİSTE DIŞINDA")
+        for item in quality_excluded[:5]:
+            reason = ", ".join(item.get("quality_reasons") or ["Kalite eşiği"])
+            lines.append(
+                f"{item['ticker']} | Birleşik {item.get('combined_score','N/A')} | "
+                f"Alpha {item.get('alpha_score','N/A')} | Teknik {item.get('technical_score','N/A')} | "
+                f"Upside %{item.get('base_upside_pct','N/A')} | {reason}"
+            )
+        lines.append("")
+
+    lines.append("Not: Önce fundamental kalite eşiği uygulanır; %70 fundamental + %30 teknik overlay yalnızca bu eşiği geçen aktif adayların sıralamasını etkiler. Teknik overlay tek başına bir hisseyi aktif fırsat yapamaz; entry/stop/pozisyon kararı kullanıcı tarafından değerlendirilmelidir.")
     lines.append("Bu içerik yatırım tavsiyesi değildir.")
 
     return "\n".join(lines)
@@ -2446,9 +2567,17 @@ def main():
         time.sleep(0.5)   # borsapy/İş Yatırım'a nazik davranalım
     save_foreign_ratio_history()
 
-    ranked = sorted(analyzed, key=lambda x: x.get("combined_score", 0), reverse=True)
-    for i, item in enumerate(ranked, 1):
-        item["rank"] = i
+    ranked, quality_excluded = rank_with_quality_guardrail(analyzed)
+    print(
+        f"Fundamental Quality Guardrail: {len(ranked)}/{len(analyzed)} aday aktif kalite eşiğini geçti; "
+        f"{len(quality_excluded)} aday aktif listenin dışında kaldı."
+    )
+    for item in quality_excluded:
+        print(
+            f"  [QUALITY-OUT {item['ticker']}] Alpha={item.get('alpha_score')} | "
+            f"Teknik={item.get('technical_score')} | Upside={item.get('base_upside_pct')}% | "
+            f"neden={', '.join(item.get('quality_reasons') or [])}"
+        )
 
     today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
     full_history = load_full_history()
@@ -2461,6 +2590,7 @@ def main():
         total_scanned=len(tickers),
         deep_count=len(candidates_df),
         previous_day_top10_map=previous_day_top10_map,
+        quality_excluded=quality_excluded,
     )
     print(report)
     send_telegram_message(report)
@@ -2475,6 +2605,9 @@ def main():
             "technical_score": r.get("technical_score"), "combined_score": r.get("combined_score"),
             "technical_coverage": r.get("technical_coverage"),
             "technical_available_signals": r.get("technical_available_signals"),
+            "base_upside_pct": r.get("base_upside_pct"),
+            "quality_eligible": r.get("quality_eligible"),
+            "top3_eligible": r.get("top3_eligible"),
             "bear_fv": r.get("bear_fv"), "base_fv": r.get("base_fv"), "bull_fv": r.get("bull_fv"),
             "verdict": r.get("verdict"),
         }
