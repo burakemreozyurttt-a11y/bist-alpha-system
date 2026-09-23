@@ -1777,65 +1777,47 @@ def _get_full_screener_df():
 
 
 def compute_foreign_interest_signal(ticker):
-    """Yabancı oranı sinyali iki bileşenden oluşur:
-    1) Anlık seviyenin BIST evrenine göre yüzdelik dilimi (üst %30 = ilgi
-       yüksek, alt %30 = ilgi düşük)
-    2) Kendi geçmişimize göre değişim (biriktirdiğimiz günlük kayıttan) —
-       bu, sistem birkaç gün çalıştıkça otomatik olarak zenginleşir.
-    borsapy'nin tek seferlik anlık veri sunması nedeniyle GERÇEK haftalık/
-    aylık değişim ancak kendi geçmiş kaydımızla mümkün; ilk günlerde bu
-    kısım N/A kalır, bu normaldir."""
-    df = _get_full_screener_df()
-    if df is None or df.empty:
+    """Yabancı ilgisi sinyalini doğrudan borsapy Ticker.fast_info içindeki
+    ``foreign_ratio`` alanından okur ve kendi günlük geçmişimizle kıyaslar.
+
+    ``screen_stocks(market_cap_min=0)`` yalnızca kullanılan screener kriterinin
+    kolonunu döndürebildiği için yabancı oranı kolonu garanti değildi. İlk
+    başarılı gün oran sadece kaydedilir ve sinyal N/A olur. Sonraki günlerden
+    itibaren oran artıyorsa +1, düşüyorsa -1, anlamlı değişmediyse 0 üretir.
+    """
+    if not TECHNICAL_LAYER_AVAILABLE:
+        return None
+    try:
+        stock = bpy.Ticker(ticker)
+        info = stock.fast_info
+        current_ratio = info.get("foreign_ratio") if hasattr(info, "get") else info["foreign_ratio"]
+        current_ratio = float(current_ratio)
+        if pd.isna(current_ratio):
+            return None
+    except Exception as e:
+        print(f"  [TEKNİK-DEBUG {ticker}] yabancı oranı alınamadı ({e})")
         return None
 
-    symbol_col = _pick_col_ci(df, ["symbol", "Symbol", "code", "Code"])
-    ratio_col = _pick_col_ci(df, ["foreign_ratio", "Foreign_Ratio", "yabanci_oran"])
-    if not symbol_col or not ratio_col:
-        return None
-
-    row = df[df[symbol_col] == ticker]
-    if row.empty:
-        return None
-    current_ratio = row.iloc[0][ratio_col]
-    if pd.isna(current_ratio):
-        return None
-
-    # Bileşen 1: evrene göre yüzdelik dilim
-    all_ratios = pd.to_numeric(df[ratio_col], errors="coerce").dropna()
-    percentile = (all_ratios < current_ratio).mean() if len(all_ratios) > 5 else None
-    level_score = None
-    if percentile is not None:
-        if percentile >= 0.70:
-            level_score = 1.0
-        elif percentile <= 0.30:
-            level_score = -1.0
-        else:
-            level_score = 0.0
-
-    # Bileşen 2: kendi geçmiş kaydımıza göre değişim + bugünün kaydını sakla
     today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
     history = load_foreign_ratio_history()
-    change_score = None
-    past_entries = history.get(ticker, [])
-    week_ago_cutoff = (datetime.now(TR_TZ) - timedelta(days=9)).strftime("%Y-%m-%d")
-    past_candidates = [e for e in past_entries if e["date"] <= week_ago_cutoff]
-    if past_candidates:
-        past_ratio = past_candidates[-1]["ratio"]
-        if past_ratio:
-            change_score = 1.0 if current_ratio > past_ratio else (-1.0 if current_ratio < past_ratio else 0.0)
+    entries = history.get(ticker, [])
+    previous_entries = [e for e in entries if e.get("date") != today_str]
+    prev = previous_entries[-1] if previous_entries else None
+    history[ticker] = (previous_entries + [{"date": today_str, "ratio": current_ratio}])[-40:]
 
-    past_entries.append({"date": today_str, "ratio": float(current_ratio)})
-    history[ticker] = past_entries[-40:]   # son ~40 kayıt yeterli (haftalık/aylık karşılaştırma için)
-
-    if level_score is None and change_score is None:
+    if prev is None:
+        print(f"  [TEKNİK-DEBUG {ticker}] yabancı oranı={current_ratio:.4f}; geçmiş yok, bugün sadece kaydedildi")
         return None
-    if change_score is None:
-        return level_score
-    if level_score is None:
-        return change_score
-    return (level_score + change_score) / 2.0
+    try:
+        prev_ratio = float(prev["ratio"])
+    except Exception:
+        return None
 
+    eps = max(abs(prev_ratio) * 0.001, 0.01 if max(abs(prev_ratio), abs(current_ratio)) > 1 else 0.0001)
+    delta = current_ratio - prev_ratio
+    score = 0.0 if abs(delta) <= eps else (1.0 if delta > 0 else -1.0)
+    print(f"  [TEKNİK-DEBUG {ticker}] yabancı oranı {prev_ratio:.4f} → {current_ratio:.4f} (Δ={delta:+.4f}), sinyal={score:+.0f}")
+    return score
 
 def compute_avwap_52wk_high_signal(daily_df, current_price):
     """Son 52 haftanın en yüksek kapanışından itibaren Anchored VWAP
@@ -2172,6 +2154,21 @@ def round2_deep_analysis(candidates_df):
         candidate = _build_candidate_for_agents(row, report_excerpt, report_period)
         result = analyze_with_gemini(candidate)
         if result:
+            # Data Confidence LLM'in tek başına 100 vermesine bırakılmıyor.
+            # Sayısal veri tamlığı ve kullanılan kaynak katmanı ile tavan uygulanır.
+            try:
+                numeric_completeness_pct = float(row.get("data_completeness", 0)) * 100.0
+            except (TypeError, ValueError):
+                numeric_completeness_pct = 0.0
+            try:
+                llm_conf = float(result.get("data_confidence", 0))
+            except (TypeError, ValueError):
+                llm_conf = 0.0
+            source_cap = 95.0 if report_excerpt else 85.0
+            adjusted_conf = min(llm_conf, numeric_completeness_pct, source_cap)
+            result["data_confidence_raw"] = result.get("data_confidence")
+            result["data_confidence"] = int(round(max(0.0, adjusted_conf)))
+
             # Round 1'den gelen sayısal verileri de sakla (rapor/hafıza için)
             result["low_liquidity_flag"] = bool(row.get("low_liquidity_flag"))
             result["screening_score"] = round(float(row.get("screening_score", 0)), 1)
@@ -2227,6 +2224,18 @@ def build_last_seen_map(history, exclude_date):
     return last_seen
 
 
+
+def build_previous_day_top10_map(history, exclude_date):
+    """En yakın önceki taramanın gerçek TOP10'unu döndürür.
+    Thesis için kullanılan 'last seen' haritasından ayrı tutulur.
+    """
+    prior = [h for h in history if h.get("date") and h.get("date") < exclude_date]
+    if not prior:
+        return {}
+    latest = max(prior, key=lambda h: h.get("date", ""))
+    ranked = sorted(latest.get("ranking", []), key=lambda x: x.get("rank", 9999))[:10]
+    return {item.get("ticker"): item for item in ranked if item.get("ticker")}
+
 def save_state(ranking):
     today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
     state = {"date": today_str, "ranking": ranking}
@@ -2256,9 +2265,10 @@ def fmt(v, suffix=""):
         return str(v)
 
 
-def build_report(ranked, last_seen_map, total_scanned, deep_count):
+def build_report(ranked, last_seen_map, total_scanned, deep_count, previous_day_top10_map=None):
     today = datetime.now(TR_TZ).strftime("%d.%m.%Y")
-    prev_map = last_seen_map   # geriye dönük isim uyumu için
+    prev_map = last_seen_map   # tez/rank geçmişi için en son görülen kayıt
+    previous_day_top10_map = previous_day_top10_map or {}
 
     lines = []
     lines.append("📊 BIST FUNDAMENTAL ALPHA — GÜNLÜK TARAMA")
@@ -2333,7 +2343,7 @@ def build_report(ranked, last_seen_map, total_scanned, deep_count):
         lines.append(f"Verdict: {item.get('verdict','N/A')}")
         lines.append("")
 
-    lines.append("📋 GÜNÜN TOP 10 FUNDAMENTAL FIRSATI")
+    lines.append("📋 GÜNÜN TOP 10 ALPHA FIRSATI (Fundamental + Teknik Overlay)")
     for i, item in enumerate(top10, 1):
         prev = prev_map.get(item["ticker"])
         delta = ""
@@ -2354,7 +2364,7 @@ def build_report(ranked, last_seen_map, total_scanned, deep_count):
     # Değişimler
     lines.append("🔄 BUGÜN NE DEĞİŞTİ?")
     current_tickers = {item["ticker"] for item in top10}
-    prev_tickers = set(prev_map.keys())
+    prev_tickers = set(previous_day_top10_map.keys())
     new_entries = current_tickers - prev_tickers
     dropped = prev_tickers - current_tickers
     if new_entries:
@@ -2368,10 +2378,14 @@ def build_report(ranked, last_seen_map, total_scanned, deep_count):
     if reserve:
         lines.append("🧾 RESERVE (11-15)")
         for i, item in enumerate(reserve, 11):
-            lines.append(f"{i}. {item['ticker']} | Alpha {item.get('alpha_score','N/A')} | Base FV {fmt(item.get('base_fv'))}")
+            lines.append(
+                f"{i}. {item['ticker']} | Birleşik {item.get('combined_score','N/A')} | "
+                f"Alpha {item.get('alpha_score','N/A')} | Teknik {item.get('technical_score','N/A')} | "
+                f"Base FV {fmt(item.get('base_fv'))}"
+            )
         lines.append("")
 
-    lines.append("Not: Bu bir teknik analiz değildir. Teknik yapı (entry/stop/pozisyon) kullanıcı tarafından değerlendirilmelidir.")
+    lines.append("Not: Sıralama %70 fundamental + %30 teknik overlay içerir. Teknik overlay yalnızca adayları sıralamaya yardımcı olur; entry/stop/pozisyon kararı kullanıcı tarafından değerlendirilmelidir.")
     lines.append("Bu içerik yatırım tavsiyesi değildir.")
 
     return "\n".join(lines)
@@ -2439,12 +2453,14 @@ def main():
     today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
     full_history = load_full_history()
     last_seen_map = build_last_seen_map(full_history, exclude_date=today_str)
+    previous_day_top10_map = build_previous_day_top10_map(full_history, exclude_date=today_str)
 
     report = build_report(
         ranked,
         last_seen_map,
         total_scanned=len(tickers),
         deep_count=len(candidates_df),
+        previous_day_top10_map=previous_day_top10_map,
     )
     print(report)
     send_telegram_message(report)
