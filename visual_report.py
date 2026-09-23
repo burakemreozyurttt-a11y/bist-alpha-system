@@ -242,8 +242,7 @@ def rank_delta(item, current_rank, last_seen_map):
 
 
 def _compact_text(txt, max_chars=66):
-    txt = " ".join(str(txt).replace("
-", " ").split())
+    txt = " ".join(str(txt).replace("\n", " ").split())
     if len(txt) <= max_chars:
         return txt
     cut = txt[:max_chars-1].rsplit(" ", 1)[0]
