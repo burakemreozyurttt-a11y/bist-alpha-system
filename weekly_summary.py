@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 from google import genai
 from google.genai import types
+from visual_report import render_weekly_report
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -96,6 +97,18 @@ def send_telegram_message(text):
         time.sleep(1)
 
 
+def send_telegram_photo(path, caption=None):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    with open(path, "rb") as f:
+        data = {"chat_id": TELEGRAM_CHAT_ID}
+        if caption:
+            data["caption"] = caption[:1000]
+        r = requests.post(url, data=data, files={"photo": f}, timeout=120)
+    if not r.ok:
+        raise RuntimeError(f"Telegram görsel gönderim hatası: {r.text}")
+
+
+
 def summarize_with_gemini(agg):
     lines = []
     # En çok gün listede kalanlar en üstte (en "istikrarlı" fırsatlar)
@@ -105,15 +118,14 @@ def summarize_with_gemini(agg):
     raw_data = "\n".join(lines)
 
     prompt = f"""
-Sen bir BIST fon yöneticisisin. Aşağıda bu haftanın (Pazartesi-Cuma) günlük
-TOP15 fundamental tarama sonuçları hisse bazında özetlenmiş şekilde
-veriliyor (hangi gün kaçıncı sırada, hangi alpha score ile listede
-kaldığı). Bu veriye dayanarak yatırımcıya Türkçe, 150-250 kelimelik bir
-"Bu Hafta Ne Oldu" özeti yaz. En istikrarlı şekilde listede kalan
-hisseleri, alpha score'u en çok yükselen/düşen hisseleri ve haftanın genel
-görünümünü vurgula. SADECE verilen veriye dayan; bilmediğin bir haberi,
-KAP açıklamasını ya da gelişmeyi ASLA uydurma — sadece sıra/skor
-değişimlerinden çıkarılabilecek gözlemleri paylaş.
+Sen BEIQ adlı karşılaştırmalı piyasa analiz sisteminin haftalık rapor editörüsün.
+Aşağıda bu haftanın günlük TOP15 sonuçları hisse bazında özetlenmiştir.
+Yalnızca verilen skor ve sıra verilerine dayanarak Türkçe, 120-180 kelimelik
+objektif bir haftalık değerlendirme yaz. Bu metin bir yatırım tavsiyesi değildir.
+Alım, satım, alınabilir, satılabilir, fırsat, kaçırılmamalı, hedef, yükselir/düşer
+gibi yönlendirici ifadeler kullanma. Bunun yerine "skor profili", "sıralama",
+"göreli güçlenme/zayıflama", "istikrar", "analitik görünüm" gibi nötr ifadeler
+kullan. Bilmediğin haber, KAP açıklaması veya gerekçe uydurma.
 
 VERİ:
 {raw_data}
@@ -163,9 +175,18 @@ def main():
         for tk, records in sorted(agg.items(), key=lambda kv: -len(kv[1]))[:15]:
             message += f"{tk}: {len(records)} gün listede\n"
 
-    message += "\n\nBu içerik yatırım tavsiyesi değildir."
-    send_telegram_message(message)
-    print("Haftalık özet gönderildi.")
+    message += "\n\nBu içerik karşılaştırmalı analiz özetidir; alım-satım çağrısı veya kişiye özel yatırım tavsiyesi içermez."
+    try:
+        weekly_png = render_weekly_report(entries, agg, summary_text=summary_text)
+        send_telegram_photo(
+            weekly_png,
+            caption=f"BEIQ | Haftalık Analiz Özeti | {entries[0]['date']} — {entries[-1]['date']}\nKarşılaştırmalı analizdir; yatırım tavsiyesi değildir."
+        )
+        print(f"Haftalık görsel Telegram'a gönderildi: {weekly_png}")
+    except Exception as e:
+        print(f"[GÖRSEL UYARI] Haftalık görsel üretilemedi/gönderilemedi: {e}")
+        send_telegram_message(message)
+        print("Haftalık metin fallback raporu gönderildi.")
 
 
 if __name__ == "__main__":
