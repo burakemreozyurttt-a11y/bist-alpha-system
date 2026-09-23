@@ -1,6 +1,4 @@
-import json
 import math
-import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -64,36 +62,17 @@ def profile_class(alpha):
     return "watch"
 
 
-def score_to_grade(score):
-    score = _clamp(score)
-    if score >= 75:
-        return "güçlü"
-    if score >= 60:
-        return "olumlu"
-    if score >= 45:
-        return "dengeli"
-    return "zayıf"
-
-
 def safe_analysis_summary(item, radar):
-    # Yatırım eylemi / yönlendirme dili kullanmadan tamamen ölçülen bileşenleri özetler.
     ordered = sorted(radar.items(), key=lambda kv: kv[1], reverse=True)
-    strongest = ordered[:2]
-    weakest = ordered[-2:]
-    strong_txt = " ve ".join(k for k, _ in strongest)
-    weak_txt = " ve ".join(k for k, _ in weakest)
-    return (
-        f"Model çıktıları {strong_txt} başlıklarında görece güçlü bir profil gösterirken, "
-        f"{weak_txt} başlıkları izlenmesi gereken alanlar olarak öne çıkıyor. "
-        "Bu değerlendirme, yalnızca mevcut temel ve teknik veri setinin karşılaştırmalı analizidir."
-    )
+    strongest = ", ".join(k for k, _ in ordered[:2])
+    monitored = ", ".join(k for k, _ in ordered[-2:])
+    return f"Öne çıkan yapı: {strongest}. İzlenen alanlar: {monitored}."
 
 
 def _normalize_cash_quality(cfo_to_net_income):
     x = _safe_float(cfo_to_net_income)
     if x is None:
         return 50.0
-    # 0 -> 10, 1 -> ~70, 1.5+ -> 100; negatif nakit dönüşümü sert cezalanır.
     if x <= 0:
         return 10.0
     return _clamp(20 + (x / 1.5) * 80)
@@ -103,7 +82,6 @@ def _normalize_roe(roe):
     x = _safe_float(roe)
     if x is None:
         return 50.0
-    # Finansal kaynaktan decimal gelmesi beklenir (0.20 = %20). Yüzde gelirse normalize et.
     if abs(x) > 2:
         x = x / 100.0
     return _clamp((x / 0.30) * 100)
@@ -115,7 +93,6 @@ def _normalize_upside(price, base_fv):
     if not p or fv is None:
         return 50.0
     upside = (fv / p - 1.0) * 100.0
-    # -10% veya altı -> 0, +30% ve üzeri -> 100
     return _clamp((upside + 10.0) / 40.0 * 100.0)
 
 
@@ -130,23 +107,30 @@ def compute_radar_scores(item):
     roe_q = _normalize_roe(item.get("roe"))
     upside_q = _normalize_upside(item.get("price"), item.get("base_fv"))
     technical = _clamp(item.get("technical_score", 50))
-
     return {
-        "Değerleme": round(valuation, 1),
-        "Büyüme & İvme": round(momentum * 0.55 + accel * 0.45, 1),
-        "Kârlılık & Nakit": round(margin * 0.45 + cash_q * 0.35 + roe_q * 0.20, 1),
-        "Bilanço Sağlığı": round(balance, 1),
-        "Yeniden Fiyatlama": round(divergence * 0.65 + upside_q * 0.35, 1),
-        "Teknik Yapı": round(technical, 1),
+        "Değer": round(valuation, 1),
+        "Büyüme": round(momentum * 0.55 + accel * 0.45, 1),
+        "Kârlılık": round(margin * 0.45 + cash_q * 0.35 + roe_q * 0.20, 1),
+        "Bilanço": round(balance, 1),
+        "Fiyatlama": round(divergence * 0.65 + upside_q * 0.35, 1),
+        "Teknik": round(technical, 1),
     }
 
 
-def radar_svg(scores, size=240):
+RADAR_THEMES = [
+    {"stroke": "#15986b", "fill": "rgba(21,152,107,.18)"},
+    {"stroke": "#3a79e3", "fill": "rgba(58,121,227,.18)"},
+    {"stroke": "#f08c2e", "fill": "rgba(240,140,46,.18)"},
+]
+
+
+def radar_svg(scores, theme=None, size=220):
+    theme = theme or RADAR_THEMES[0]
     labels = list(scores.keys())
     values = [scores[k] for k in labels]
     cx = cy = size / 2
-    radius = size * 0.31
-    label_r = size * 0.39
+    radius = size * 0.285
+    label_r = size * 0.40
 
     def pt(angle_deg, r):
         a = math.radians(angle_deg - 90)
@@ -156,46 +140,31 @@ def radar_svg(scores, size=240):
     grid = []
     for frac in (0.25, 0.5, 0.75, 1.0):
         pts = " ".join(f"{pt(a, radius*frac)[0]:.1f},{pt(a, radius*frac)[1]:.1f}" for a in angles)
-        grid.append(f'<polygon points="{pts}" fill="none" stroke="#cad7e5" stroke-width="1"/>')
+        grid.append(f'<polygon points="{pts}" fill="none" stroke="#cfdae5" stroke-width="1"/>')
     axes = []
     for a in angles:
         x, y = pt(a, radius)
-        axes.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="#d4deea" stroke-width="1"/>')
+        axes.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="#d7e1ea" stroke-width="1"/>')
 
     data_pts = " ".join(
         f"{pt(a, radius * (_clamp(v)/100))[0]:.1f},{pt(a, radius * (_clamp(v)/100))[1]:.1f}"
         for a, v in zip(angles, values)
     )
     label_parts = []
-    for a, label, value in zip(angles, labels, values):
+    for a, label in zip(angles, labels):
         x, y = pt(a, label_r)
         anchor = "middle"
         if x < cx - 12:
             anchor = "end"
         elif x > cx + 12:
             anchor = "start"
-        # two-line labels where needed
-        words = label.split(" ")
-        if len(words) > 1:
-            mid = max(1, len(words)//2)
-            l1 = " ".join(words[:mid])
-            l2 = " ".join(words[mid:])
-            label_parts.append(
-                f'<text x="{x:.1f}" y="{y-4:.1f}" text-anchor="{anchor}" class="radar-label">{l1}</text>'
-                f'<text x="{x:.1f}" y="{y+9:.1f}" text-anchor="{anchor}" class="radar-label">{l2}</text>'
-                f'<text x="{x:.1f}" y="{y+22:.1f}" text-anchor="{anchor}" class="radar-value">{value:.0f}</text>'
-            )
-        else:
-            label_parts.append(
-                f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" class="radar-label">{label}</text>'
-                f'<text x="{x:.1f}" y="{y+14:.1f}" text-anchor="{anchor}" class="radar-value">{value:.0f}</text>'
-            )
+        label_parts.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" class="radar-label">{label}</text>')
 
     return (
         f'<svg viewBox="0 0 {size} {size}" class="radar-svg" xmlns="http://www.w3.org/2000/svg">'
-        + "".join(grid) + "".join(axes)
-        + f'<polygon points="{data_pts}" fill="rgba(38,154,105,.22)" stroke="#1b8e64" stroke-width="2"/>'
-        + "".join(label_parts) + '</svg>'
+        + ''.join(grid) + ''.join(axes)
+        + f'<polygon points="{data_pts}" fill="{theme["fill"]}" stroke="{theme["stroke"]}" stroke-width="2.2"/>'
+        + ''.join(label_parts) + '</svg>'
     )
 
 
@@ -223,12 +192,12 @@ def fetch_week_price_series(ticker):
         return []
 
 
-def sparkline_svg(values, width=260, height=82):
+def sparkline_svg(values, width=150, height=54):
     if not values or len(values) < 2:
         return f'<svg viewBox="0 0 {width} {height}" class="sparkline-svg"><line x1="4" y1="{height/2}" x2="{width-4}" y2="{height/2}" stroke="#aebdcd" stroke-width="2" stroke-dasharray="5 5"/></svg>'
     mn, mx = min(values), max(values)
     span = mx - mn if mx != mn else 1.0
-    pad = 7
+    pad = 6
     pts = []
     for i, v in enumerate(values):
         x = pad + i * (width - 2*pad) / (len(values)-1)
@@ -239,10 +208,10 @@ def sparkline_svg(values, width=260, height=82):
     last_x, last_y = pts[-1]
     return (
         f'<svg viewBox="0 0 {width} {height}" class="sparkline-svg">'
-        '<defs><linearGradient id="spg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#20a56f" stop-opacity=".34"/><stop offset="1" stop-color="#20a56f" stop-opacity="0"/></linearGradient></defs>'
+        '<defs><linearGradient id="spg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#20a56f" stop-opacity=".32"/><stop offset="1" stop-color="#20a56f" stop-opacity="0"/></linearGradient></defs>'
         f'<polygon points="{area}" fill="url(#spg)"/>'
-        f'<polyline points="{line}" fill="none" stroke="#169766" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'
-        f'<circle cx="{last_x:.1f}" cy="{last_y:.1f}" r="4" fill="#0f8057"/>'
+        f'<polyline points="{line}" fill="none" stroke="#169766" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<circle cx="{last_x:.1f}" cy="{last_y:.1f}" r="3.4" fill="#0f8057"/>'
         '</svg>'
     )
 
@@ -272,11 +241,19 @@ def rank_delta(item, current_rank, last_seen_map):
     return "=", "flat"
 
 
+def _compact_text(txt, max_chars=66):
+    txt = " ".join(str(txt).replace("
+", " ").split())
+    if len(txt) <= max_chars:
+        return txt
+    cut = txt[:max_chars-1].rsplit(" ", 1)[0]
+    return cut.rstrip(" ,;:.") + "…"
+
+
 def _public_points(items, limit=3):
     out = []
     for x in (items or [])[:limit]:
         txt = str(x).strip()
-        # Eylem dilini yumuşatan küçük güvenlik katmanı.
         replacements = {
             "alım": "pozitif sinyal", "satım": "negatif sinyal", "alınabilir": "izlenebilir",
             "satılabilir": "izlenebilir", "hedef fiyat": "değerleme referansı",
@@ -285,8 +262,28 @@ def _public_points(items, limit=3):
         for bad, good in replacements.items():
             if bad in low:
                 txt = txt.replace(bad, good).replace(bad.capitalize(), good.capitalize())
-        out.append(txt)
+        out.append(_compact_text(txt))
     return out
+
+
+def _profile_summary(item, radar):
+    profile = profile_label(item.get("alpha_score"))
+    if profile == "GÜÇLÜ PROFİL":
+        return safe_analysis_summary(item, radar)
+    if profile == "POZİTİF PROFİL":
+        return safe_analysis_summary(item, radar)
+    if profile == "DENGELİ PROFİL":
+        return "Göstergeler dengeli bir profil işaret eder; güçlü ve zayıf başlıklar birlikte izlenmelidir."
+    return "Mevcut veri seti, daha temkinli ve yakın izleme gerektiren bir görünüm işaret etmektedir."
+
+
+def score_cell_class(alpha):
+    a = _safe_float(alpha, 0) or 0
+    if a >= 70:
+        return "score-high"
+    if a >= 60:
+        return "score-mid"
+    return "score-low"
 
 
 def build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_scanned, deep_count):
@@ -298,6 +295,7 @@ def build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_sca
         radar = compute_radar_scores(item)
         delta, delta_class = rank_delta(item, idx, last_seen_map)
         spark_vals = fetch_week_price_series(item.get("ticker"))
+        theme = RADAR_THEMES[(idx - 1) % len(RADAR_THEMES)]
         cards.append({
             "rank": idx,
             "ticker": item.get("ticker"),
@@ -305,21 +303,19 @@ def build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_sca
             "alpha": round(_safe_float(item.get("alpha_score"), 0) or 0, 1),
             "confidence": confidence_label(item.get("data_confidence")),
             "price": _format_num(item.get("price")),
-            "bear_fv": _format_num(item.get("bear_fv")),
-            "base_fv": _format_num(item.get("base_fv")),
-            "bull_fv": _format_num(item.get("bull_fv")),
+            "downside": _format_num(item.get("bear_fv")),
+            "base": _format_num(item.get("base_fv")),
+            "upside_value": _format_num(item.get("bull_fv")),
             "upside": _upside_pct(item),
             "previous_rank": last_seen_map.get(item.get("ticker"), {}).get("rank", "—") if last_seen_map else "—",
             "delta": delta,
             "delta_class": delta_class,
             "profile": profile_label(item.get("alpha_score")),
             "profile_class": profile_class(item.get("alpha_score")),
-            "radar_svg": radar_svg(radar),
+            "radar_svg": radar_svg(radar, theme),
             "sparkline_svg": sparkline_svg(spark_vals),
-            "sparkline_min": min(spark_vals) if spark_vals else None,
-            "sparkline_max": max(spark_vals) if spark_vals else None,
             "radar": radar,
-            "analysis_summary": safe_analysis_summary(item, radar),
+            "analysis_summary": _profile_summary(item, radar),
             "positives": _public_points(item.get("catalysts") or [], 3),
             "risks": _public_points(item.get("risks") or [], 3),
         })
@@ -335,6 +331,7 @@ def build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_sca
             "base_fv": _format_num(item.get("base_fv")),
             "delta": delta,
             "delta_class": delta_class,
+            "score_class": score_cell_class(item.get("alpha_score")),
         })
 
     reserve = []
@@ -365,10 +362,7 @@ def build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_sca
 
 
 def _env():
-    return Environment(
-        loader=FileSystemLoader(str(TEMPLATE_DIR)),
-        autoescape=select_autoescape(["html", "xml"]),
-    )
+    return Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), autoescape=select_autoescape(["html", "xml"]))
 
 
 def render_html_to_png(template_name, context, output_path, viewport):
@@ -381,8 +375,6 @@ def render_html_to_png(template_name, context, output_path, viewport):
     import shutil
     with sync_playwright() as p:
         launch_kwargs = {"headless": True}
-        # Lokal geliştirme ortamında sistem Chromium'u kullan; GitHub Actions'ta
-        # workflow'un kurduğu Playwright Chromium otomatik bulunur.
         system_chromium = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
         if system_chromium:
             launch_kwargs["executable_path"] = system_chromium
@@ -401,7 +393,7 @@ def render_html_to_png(template_name, context, output_path, viewport):
 def render_daily_report(ranked, last_seen_map, previous_day_top10_map, total_scanned, deep_count):
     ctx = build_daily_context(ranked, last_seen_map, previous_day_top10_map, total_scanned, deep_count)
     out = OUTPUT_DIR / f"beiq_daily_{datetime.now(TR_TZ).strftime('%Y%m%d')}.png"
-    return render_html_to_png("daily_report.html", ctx, out, {"width": 1080, "height": 1580})
+    return render_html_to_png("daily_report.html", ctx, out, {"width": 1080, "height": 1600})
 
 
 def build_weekly_context(entries, agg, summary_text=None):
@@ -433,7 +425,6 @@ def build_weekly_context(entries, agg, summary_text=None):
     leader = sorted(stats, key=lambda x: (-x["avg_alpha"], x["avg_rank"]))[:1]
     starters = sorted(stats, key=lambda x: -x["first_alpha"])[:2]
     decliners = sorted(stats, key=lambda x: (x["alpha_change"], x["rank_change"]))[:2]
-
     highlights = sorted(stats, key=lambda x: (-x["days"], -x["avg_alpha"]))[:3]
     movements = sorted(stats, key=lambda x: -abs(x["alpha_change"]))[:4]
 
