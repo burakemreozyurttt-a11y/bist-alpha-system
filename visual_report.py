@@ -248,9 +248,15 @@ def _normalize_text_for_note(txt):
 
 
 def _public_points(items, limit=3):
+    """Karttaki katalizör/risk maddelerini TAM cümle olarak korur.
+
+    Eski sürüm 72 karakterde üç noktayla kesiyordu; bu bilgi kaybettiriyordu.
+    Ajanlar artık kısa tam cümle üretmeye zorlandığı için burada keyfi truncation yok.
+    Aşırı uzun beklenmedik bir çıktı gelirse ilk TAM cümleyi tercih eder.
+    """
     out = []
     for x in (items or [])[:limit]:
-        txt = str(x).strip()
+        txt = " ".join(str(x).replace("\n", " ").split()).strip()
         replacements = {
             "alım": "pozitif sinyal", "satım": "negatif sinyal", "alınabilir": "izlenebilir",
             "satılabilir": "izlenebilir", "hedef fiyat": "değerleme referansı",
@@ -259,7 +265,16 @@ def _public_points(items, limit=3):
         for bad, good in replacements.items():
             if bad in low:
                 txt = txt.replace(bad, good).replace(bad.capitalize(), good.capitalize())
-        out.append(_compact_text(txt, 72))
+
+        # Model istemeden çok uzun paragraf döndürürse yarım kesmek yerine
+        # ilk tamamlanmış cümleyi kullan. Nokta yoksa metni olduğu gibi bırak.
+        if len(txt) > 180:
+            sentence_ends = [i for i, ch in enumerate(txt) if ch in ".!?" and i >= 70]
+            if sentence_ends:
+                txt = txt[:sentence_ends[0] + 1].strip()
+        if txt and txt[-1] not in ".!?":
+            txt += "."
+        out.append(txt)
     return out
 
 
