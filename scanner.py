@@ -2833,13 +2833,19 @@ def fmt(v, suffix=""):
         return str(v)
 
 
-def _safe_float(v):
+def _safe_float(v, default=None):
+    """Sayısal değeri güvenli şekilde float'a çevirir.
+
+    `v` boş/N/A/geçersiz ise `default` döner. Case-history katmanında
+    önceki değer yoksa güncel değeri fallback olarak kullanabilmek için
+    default parametresi desteklenir.
+    """
     try:
         if v is None or v == "N/A":
-            return None
+            return default
         return float(v)
     except (TypeError, ValueError):
-        return None
+        return default
 
 
 FINAL_ALPHA_MIN_ACTIVE = 45.0
