@@ -2870,6 +2870,54 @@ FINAL_ALPHA_MIN_ACTIVE = 45.0
 MIN_FUNDAMENTAL_SCORE_ACTIVE = 55.0
 MIN_BASE_UPSIDE_PCT_ACTIVE = 8.0
 
+# Base'e çok yaklaşmış yeni bir aday sırf %8 eşiğinin altında diye otomatik
+# elenmez. Ancak bu istisna normal girişten daha seçicidir: şirketin temel
+# kalitesi yeterli olmalı, Final Alpha zayıf olmamalı ve Bull/Upside senaryosu
+# iki ajan tarafından da ölçülebilir kanıtlarla doğrulanmış olmalıdır.
+NEAR_BASE_BULL_MIN_FUNDAMENTAL = 60.0
+NEAR_BASE_BULL_MIN_FINAL_ALPHA = 55.0
+NEAR_BASE_BULL_MIN_GAP_PCT = 12.0
+
+
+def _near_base_bull_exception(item, fundamental, final_alpha):
+    """0-%8 Base alanı olan YENİ aday için kontrollü Bull-case istisnası.
+
+    Valuation discipline katmanı zaten bull_fv'yi yalnızca Bull Agent + CRO
+    birlikte desteklediyse ve ölçülebilir evidence varsa korur. Burada ek
+    olarak kalite ve kalan Bull alanı aranır.
+    """
+    bull_fv = _safe_float(item.get("bull_fv"))
+    price = _safe_float(item.get("price"))
+    upside_status = str(item.get("upside_case_status", "")).upper()
+    evidence = item.get("upside_evidence") or []
+
+    if not bull_fv or not price or price <= 0:
+        return False, None, "destekli Bull FV yok"
+
+    bull_gap_pct = ((bull_fv / price) - 1.0) * 100.0
+
+    if fundamental < NEAR_BASE_BULL_MIN_FUNDAMENTAL:
+        return False, bull_gap_pct, (
+            f"yakın-Base istisnası için fundamental {fundamental:.1f} < "
+            f"{NEAR_BASE_BULL_MIN_FUNDAMENTAL:.1f}"
+        )
+    if final_alpha < NEAR_BASE_BULL_MIN_FINAL_ALPHA:
+        return False, bull_gap_pct, (
+            f"yakın-Base istisnası için Final Alpha {final_alpha:.1f} < "
+            f"{NEAR_BASE_BULL_MIN_FINAL_ALPHA:.1f}"
+        )
+    if upside_status != "SUPPORTED" or not evidence:
+        return False, bull_gap_pct, "Bull/Upside senaryosu ölçülebilir kanıtla desteklenmiyor"
+    if bull_gap_pct < NEAR_BASE_BULL_MIN_GAP_PCT:
+        return False, bull_gap_pct, (
+            f"destekli Bull alanı yalnızca %{bull_gap_pct:.1f}; "
+            f"asgari %{NEAR_BASE_BULL_MIN_GAP_PCT:.1f} aranıyor"
+        )
+
+    return True, bull_gap_pct, (
+        f"yakın-Base istisnası: destekli Bull-case var, Bull alanı %{bull_gap_pct:.1f}"
+    )
+
 
 def _opportunity_gate(item, fundamental, final_alpha, continuing_case=False):
     price = _safe_float(item.get("price"))
@@ -2882,30 +2930,53 @@ def _opportunity_gate(item, fundamental, final_alpha, continuing_case=False):
 
     base_upside_pct = ((base_fv / price) - 1.0) * 100.0
 
+    # Fundamental kalite her durumda ön şarttır. Teknik/Bull senaryosu bunu
+    # tek başına telafi edemez.
     if fundamental < MIN_FUNDAMENTAL_SCORE_ACTIVE:
         return False, base_upside_pct, (
             f"fundamental skor {fundamental:.1f} < {MIN_FUNDAMENTAL_SCORE_ACTIVE:.1f}"
         )
 
-    # Yeni bir case ancak en az %8 Base alanı varken ana fırsat havuzuna girebilir.
-    # FAKAT hâlihazırda TOP10 case'i olan bir hisse %8'in altına düştü diye
-    # listeden atılmaz; Base'e gerçekten ulaşana kadar ranking'de kalabilir.
-    if base_upside_pct <= 0:
-        return False, base_upside_pct, (
-            f"güncel fiyat Base FV'yi fiyatlamış/aşmış (Base fark %{base_upside_pct:.1f})"
-        )
-    if base_upside_pct < MIN_BASE_UPSIDE_PCT_ACTIVE and not continuing_case:
-        return False, base_upside_pct, (
-            f"yeni case için Base fark yalnızca %{base_upside_pct:.1f}; "
-            f"giriş eşiği %{MIN_BASE_UPSIDE_PCT_ACTIVE:.1f}"
-        )
-
+    # Final Alpha da her aktif ana-list case'i için asgari seviyede olmalı.
     if final_alpha < FINAL_ALPHA_MIN_ACTIVE:
         return False, base_upside_pct, (
             f"Final Alpha {final_alpha:.1f} < {FINAL_ALPHA_MIN_ACTIVE:.1f}"
         )
 
-    return True, base_upside_pct, "uygun"
+    # Base gerçekleşmiş/aşılmışsa YENİ bir ana fırsat case'i açmayız.
+    # Mevcut case'lerde ise lifecycle katmanı destekli Bull-case varsa
+    # BULL_CASE_WATCH'a geçirir; yoksa case'i kapatır.
+    if base_upside_pct <= 0:
+        return False, base_upside_pct, (
+            f"güncel fiyat Base FV'yi fiyatlamış/aşmış (Base fark %{base_upside_pct:.1f}); "
+            "mevcut case varsa Bull-case lifecycle kontrolüne gider"
+        )
+
+    # Hâlihazırda TOP10 case'i olan hisse %8'in altına düştü diye atılmaz.
+    # Sadece APPROACHING_BASE statüsüne geçer ve ranking'de kalır.
+    if continuing_case:
+        if base_upside_pct < MIN_BASE_UPSIDE_PCT_ACTIVE:
+            return True, base_upside_pct, (
+                f"mevcut case APPROACHING_BASE olarak devam ediyor; Base fark %{base_upside_pct:.1f}"
+            )
+        return True, base_upside_pct, "mevcut case uygun"
+
+    # Yeni adaylarda %8+ Base alanı normal giriş yoludur.
+    if base_upside_pct >= MIN_BASE_UPSIDE_PCT_ACTIVE:
+        return True, base_upside_pct, "uygun"
+
+    # Yeni aday 0-%8 aralığındaysa kör eleme yapmak yerine destekli Bull-case
+    # kontrol edilir. İstisna geçerse yeni case APPROACHING_BASE olarak açılır.
+    bull_ok, bull_gap_pct, bull_reason = _near_base_bull_exception(
+        item, fundamental, final_alpha
+    )
+    if bull_ok:
+        return True, base_upside_pct, bull_reason
+
+    return False, base_upside_pct, (
+        f"Base fark yalnızca %{base_upside_pct:.1f}; normal giriş eşiği "
+        f"%{MIN_BASE_UPSIDE_PCT_ACTIVE:.1f}. Bull-case istisnası da geçmedi: {bull_reason}"
+    )
 
 
 def assign_final_alpha_scores(analyzed, continuing_case_tickers=None):
@@ -2913,7 +2984,8 @@ def assign_final_alpha_scores(analyzed, continuing_case_tickers=None):
 
     Akış:
         1) CRO'nun güncel fundamental analizi ve Base FV'si alınır.
-        2) Fundamental fırsat filtresi uygulanır.
+        2) Fundamental fırsat filtresi uygulanır. Base farkı %8'in altındaki yeni
+           adaylarda destekli Bull-case istisnası ayrıca kontrol edilir.
         3) Yalnızca filtreden geçen hisseler için Final Alpha sıralaması yapılır.
 
     Final Alpha = Fundamental %70 + Teknik %30
