@@ -1388,6 +1388,13 @@ KAMUYA AÇIK KART DİLİ:
 - Her madde tam cümle olsun ve tek başına okunduğunda ne anlatıldığı anlaşılsın.
 - Bir cümlede mümkünse önce somut bulguyu, sonra analitik anlamını ver.
 - 90-150 karakter hedefle; kesinlikle üç nokta (...) veya yarım bırakılmış ifade üretme.
+- thesis_summary, kartın sağındaki "analist notu" olarak doğrudan gösterilecektir.
+- thesis_summary 2 veya 3 TAM cümle olsun; yaklaşık 180-280 karakter hedefle.
+- thesis_summary doğal ve akıcı Türkçe olsun: önce genel tabloyu, sonra ana destekleyici unsuru ve en önemli sınırlayıcı/risk başlığını anlat.
+- Katalizör listesini art arda kopyalama; aynı oranı veya aynı ifadeyi iki kez tekrar etme.
+- Cümleleri noktalı virgülle birbirine yığma. Her cümle tek başına anlaşılır olsun.
+- "tabloyu destekliyor", "öne çıkıyor" gibi boş/genel kalıpları tek başına kullanma; neyin neden önemli olduğunu açıkla.
+- Önceki analize göre gerçek bir değişim yoksa değişim varmış gibi yazma.
 - Yatırım eylemi önerme; "al/sat" dili kullanma.
 
 Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
@@ -1401,7 +1408,7 @@ Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
   "base_revision_evidence": ["<önceki analize göre yeni ve maddi kanıtlar>"],
   "upside_case_status": "SUPPORTED | UNSUPPORTED",
   "upside_evidence": ["<Bull FV'yi destekleyen ölçülebilir kanıtlar>"],
-  "thesis_summary": "<2-3 cümlelik dengeli sentez>",
+  "thesis_summary": "<180-280 karakter, 2-3 TAM cümlelik doğal ve profesyonel analist notu>",
   "catalysts": ["<90-150 karakterlik TAM ve bağımsız analiz cümlesi>", "<gerekirse ikinci TAM cümle>"],
   "risks": ["<90-150 karakterlik TAM ve bağımsız risk cümlesi>", "<gerekirse ikinci TAM cümle>"],
   "verdict": "<HIGH CONVICTION | ATTRACTIVE | WATCH | WEAKENING içinden biri>"
