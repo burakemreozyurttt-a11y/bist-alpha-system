@@ -110,45 +110,55 @@ def send_telegram_photo(path, caption=None):
 
 
 
-def summarize_with_gemini(agg, methodology_note=""):
+def summarize_with_gemini(agg, methodology_changed=False):
     lines = []
-    # En çok gün listede kalanlar en üstte (en "istikrarlı" fırsatlar)
-    for tk, records in sorted(agg.items(), key=lambda kv: -len(kv[1])):
+    for tk, records in sorted(agg.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         detail = ", ".join(f"{r['date']}: sıra {r['rank']}, alpha {r['alpha_score']}" for r in records)
-        lines.append(f"{tk} ({len(records)} gün listede): {detail}")
+        lines.append(f"{tk} ({len(records)} gün): {detail}")
     raw_data = "\n".join(lines)
 
+    methodology_instruction = (
+        "Hafta içinde scoring metodolojisi değişti. Bunu yalnızca TEK kısa cümleyle kullanıcıya açıkla; "
+        "iç model/sürüm kodlarını ASLA yazma. Skor değişimlerini şirket temel/teknik görünümündeki değişimin doğrudan kanıtı gibi yorumlama."
+        if methodology_changed else
+        "Hafta boyunca karşılaştırılabilir scoring metodolojisi kullanıldı."
+    )
+
     prompt = f"""
-Sen BEIQ adlı karşılaştırmalı piyasa analiz sisteminin haftalık rapor editörüsün.
-Aşağıda bu haftanın günlük TOP15 sonuçları hisse bazında özetlenmiştir.
-Yalnızca verilen skor ve sıra verilerine dayanarak Türkçe, 120-180 kelimelik
-objektif bir haftalık değerlendirme yaz. Bu metin bir yatırım tavsiyesi değildir.
-Alım, satım, alınabilir, satılabilir, fırsat, kaçırılmamalı, hedef, yükselir/düşer
-gibi yönlendirici ifadeler kullanma. Bunun yerine "skor profili", "sıralama",
-"göreli güçlenme/zayıflama", "istikrar", "analitik görünüm" gibi nötr ifadeler
-kullan. Bilmediğin haber, KAP açıklaması veya gerekçe uydurma.
+Sen BEIQ haftalık araştırma notunu yazan deneyimli bir piyasa analistisin.
+Aşağıdaki veri yalnızca günlük liste sıralamaları ve Alpha Score'lardan oluşuyor.
+Bu nedenle haber, bilanço nedeni, şirket olayı veya fiyat hareketinin sebebi hakkında veri dışı açıklama UYDURMA.
 
-METODOLOJİ NOTU:
-{methodology_note or "Hafta içinde tek scoring metodolojisi kullanıldı."}
+120-180 kelimelik, doğal Türkçe bir "Genel Değerlendirme" yaz.
+Dil aşırı resmî olmasın; gevşek de olmasın. Deneyimli bir analistin kendi kısa haftalık notu gibi akıcı olsun.
 
-VERİ:
+YAZIM KURALLARI:
+- İç sistem/model isimlerini, sürüm kodlarını veya teknik sabitleri ASLA kullanıcıya gösterme.
+- "skor hareketi izlendi", "analitik görünüm çeşitlilik gösterdi" gibi boş/genel kalıpları mümkün olduğunca kullanma.
+- Somut isim ve sayı kullan: kim kaç gün listede kaldı, kim üst sıralarda kaldı, kim belirgin sıra/skor değişimi yaşadı.
+- Aynı hisseyi ve aynı veriyi paragraf içinde tekrar tekrar söyleme.
+- Sadece skor/sıra verisine bakarak "şirket güçlendi", "temeller bozuldu" gibi neden-sonuç çıkarma.
+- Al/sat, hedef, kaçırılmamalı, yükselir/düşer gibi yatırım yönlendirmesi kullanma.
+- Son cümle kısa bir veri sınırlaması/yatırım tavsiyesi değildir notu olabilir.
+
+METODOLOJİ DURUMU:
+{methodology_instruction}
+
+HAFTALIK VERİ:
 {raw_data}
-
-ÖNEMLİ: Metodoloji notu birden fazla sürüm gösteriyorsa skor değişimlerini doğrudan şirket performansı olarak yorumlama; bunu açıkça sınır olarak belirt.
 """
     for model_name in MODEL_CANDIDATES:
         try:
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt,
-                config=types.GenerateContentConfig(temperature=0.4),
+                config=types.GenerateContentConfig(temperature=0.35),
             )
             return response.text.strip()
         except Exception as e:
             print(f"  {model_name} başarısız: {e}")
             continue
     return None
-
 
 def main():
     now = datetime.now(TR_TZ)
@@ -172,18 +182,20 @@ def main():
         (item.get("scoring_version") or e.get("scoring_version") or "LEGACY_UNVERSIONED")
         for e in entries for item in e.get("ranking", [])
     })
-    methodology_note = ""
-    if len(versions) > 1:
-        methodology_note = (
-            "Bu hafta birden fazla scoring metodolojisi/sürümü kullanıldı: "
-            + ", ".join(versions)
-            + ". Bu nedenle haftalık Alpha Score değişimleri doğrudan şirket temel/teknik görünümündeki değişim olarak yorumlanmamalıdır."
-        )
-        print("[HAFTALIK-METODOLOJİ] " + methodology_note)
+    methodology_changed = len(versions) > 1
+    if methodology_changed:
+        # İç sürüm isimleri yalnız logda kalır; kullanıcıya açık rapora yazılmaz.
+        print("[HAFTALIK-METODOLOJİ] Hafta içinde birden fazla scoring sürümü kullanıldı: " + ", ".join(versions))
     print(f"Bu hafta {len(entries)} günlük kayıt, {len(agg)} farklı hisse bulundu. Gemini özeti isteniyor...")
-    summary_text = summarize_with_gemini(agg, methodology_note=methodology_note)
-    if methodology_note:
-        summary_text = (methodology_note + " " + (summary_text or "")).strip()
+    summary_text = summarize_with_gemini(agg, methodology_changed=methodology_changed)
+    if methodology_changed and summary_text:
+        # Model metodoloji uyarısını unutursa, kullanıcıya teknik kod vermeden tek sade cümle ekle.
+        marker_words = ("metodoloji", "yöntem", "karşılaştırılabilir")
+        if not any(w in summary_text.lower() for w in marker_words):
+            summary_text = (
+                "Bu hafta skor hesaplama yönteminde güncelleme yapıldığı için günlük Alpha değişimleri tek başına şirket görünümündeki değişim olarak okunmamalıdır. "
+                + summary_text
+            )
 
     header = f"🗓️ HAFTALIK ÖZET ({entries[0]['date']} — {entries[-1]['date']})\n\n"
     if summary_text:
