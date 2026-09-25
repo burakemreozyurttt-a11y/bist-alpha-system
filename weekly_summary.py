@@ -82,6 +82,7 @@ def build_aggregate(entries):
                 "date": e["date"],
                 "rank": item.get("rank"),
                 "alpha_score": item.get("alpha_score"),
+                "scoring_version": item.get("scoring_version") or e.get("scoring_version") or "LEGACY_UNVERSIONED",
             })
     return agg
 
@@ -109,7 +110,7 @@ def send_telegram_photo(path, caption=None):
 
 
 
-def summarize_with_gemini(agg):
+def summarize_with_gemini(agg, methodology_note=""):
     lines = []
     # En çok gün listede kalanlar en üstte (en "istikrarlı" fırsatlar)
     for tk, records in sorted(agg.items(), key=lambda kv: -len(kv[1])):
@@ -127,8 +128,13 @@ gibi yönlendirici ifadeler kullanma. Bunun yerine "skor profili", "sıralama",
 "göreli güçlenme/zayıflama", "istikrar", "analitik görünüm" gibi nötr ifadeler
 kullan. Bilmediğin haber, KAP açıklaması veya gerekçe uydurma.
 
+METODOLOJİ NOTU:
+{methodology_note or "Hafta içinde tek scoring metodolojisi kullanıldı."}
+
 VERİ:
 {raw_data}
+
+ÖNEMLİ: Metodoloji notu birden fazla sürüm gösteriyorsa skor değişimlerini doğrudan şirket performansı olarak yorumlama; bunu açıkça sınır olarak belirt.
 """
     for model_name in MODEL_CANDIDATES:
         try:
@@ -162,8 +168,22 @@ def main():
         print("Bu hafta hiç hisse kaydı yok, haftalık özet atlanıyor.")
         return
 
+    versions = sorted({
+        (item.get("scoring_version") or e.get("scoring_version") or "LEGACY_UNVERSIONED")
+        for e in entries for item in e.get("ranking", [])
+    })
+    methodology_note = ""
+    if len(versions) > 1:
+        methodology_note = (
+            "Bu hafta birden fazla scoring metodolojisi/sürümü kullanıldı: "
+            + ", ".join(versions)
+            + ". Bu nedenle haftalık Alpha Score değişimleri doğrudan şirket temel/teknik görünümündeki değişim olarak yorumlanmamalıdır."
+        )
+        print("[HAFTALIK-METODOLOJİ] " + methodology_note)
     print(f"Bu hafta {len(entries)} günlük kayıt, {len(agg)} farklı hisse bulundu. Gemini özeti isteniyor...")
-    summary_text = summarize_with_gemini(agg)
+    summary_text = summarize_with_gemini(agg, methodology_note=methodology_note)
+    if methodology_note:
+        summary_text = (methodology_note + " " + (summary_text or "")).strip()
 
     header = f"🗓️ HAFTALIK ÖZET ({entries[0]['date']} — {entries[-1]['date']})\n\n"
     if summary_text:
