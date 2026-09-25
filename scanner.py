@@ -2632,7 +2632,10 @@ def _close_case(ticker, active, history, today, reason, item=None):
         _copy_case_metrics(rec, item)
     rec["close_date"] = today
     rec["close_reason"] = reason
-    rec["exit_price"] = _safe_float((item or {}).get("price"), _safe_float(rec.get("price")))
+    exit_price = _safe_float((item or {}).get("price"))
+    if exit_price is None:
+        exit_price = _safe_float(rec.get("price"))
+    rec["exit_price"] = exit_price
     rec["exit_rank"] = (item or {}).get("rank")
     entry_price = _safe_float(rec.get("entry_price"))
     exit_price = _safe_float(rec.get("exit_price"))
@@ -2942,7 +2945,10 @@ def update_case_lifecycle(ranked, analyzed, active, history, daily):
                 rec["max_price"] = max([x for x in [_safe_float(rec.get("max_price")), price] if x is not None])
                 rec["min_price"] = min([x for x in [_safe_float(rec.get("min_price")), price] if x is not None])
             if alpha is not None:
-                rec["max_alpha"] = max(_safe_float(rec.get("max_alpha"), alpha), alpha)
+                prev_max_alpha = _safe_float(rec.get("max_alpha"))
+                if prev_max_alpha is None:
+                    prev_max_alpha = alpha
+                rec["max_alpha"] = max(prev_max_alpha, alpha)
             if gap is not None:
                 old_gap = _safe_float(rec.get("min_base_gap_pct"))
                 rec["min_base_gap_pct"] = min(gap, old_gap) if old_gap is not None else gap
