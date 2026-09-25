@@ -194,6 +194,14 @@ TR_TZ = timezone(timedelta(hours=3))
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
+# --------------------------------------------------------------------------
+# VERSIONING — istatistiklerde metodoloji değişimini ayırmak için
+# --------------------------------------------------------------------------
+APP_VERSION = "V5.17"
+SCORING_VERSION = "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3"
+VALUATION_VERSION = "BASE_UPSIDE_DISCIPLINE_V2"
+CASE_ENGINE_VERSION = "CASE_LIFECYCLE_V3"
+
 
 # --------------------------------------------------------------------------
 # 1) TICKER LİSTESİ
@@ -1388,13 +1396,6 @@ KAMUYA AÇIK KART DİLİ:
 - Her madde tam cümle olsun ve tek başına okunduğunda ne anlatıldığı anlaşılsın.
 - Bir cümlede mümkünse önce somut bulguyu, sonra analitik anlamını ver.
 - 90-150 karakter hedefle; kesinlikle üç nokta (...) veya yarım bırakılmış ifade üretme.
-- thesis_summary, kartın sağındaki "analist notu" olarak doğrudan gösterilecektir.
-- thesis_summary 2 veya 3 TAM cümle olsun; yaklaşık 180-280 karakter hedefle.
-- thesis_summary doğal ve akıcı Türkçe olsun: önce genel tabloyu, sonra ana destekleyici unsuru ve en önemli sınırlayıcı/risk başlığını anlat.
-- Katalizör listesini art arda kopyalama; aynı oranı veya aynı ifadeyi iki kez tekrar etme.
-- Cümleleri noktalı virgülle birbirine yığma. Her cümle tek başına anlaşılır olsun.
-- "tabloyu destekliyor", "öne çıkıyor" gibi boş/genel kalıpları tek başına kullanma; neyin neden önemli olduğunu açıkla.
-- Önceki analize göre gerçek bir değişim yoksa değişim varmış gibi yazma.
 - Yatırım eylemi önerme; "al/sat" dili kullanma.
 
 Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
@@ -1408,7 +1409,7 @@ Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
   "base_revision_evidence": ["<önceki analize göre yeni ve maddi kanıtlar>"],
   "upside_case_status": "SUPPORTED | UNSUPPORTED",
   "upside_evidence": ["<Bull FV'yi destekleyen ölçülebilir kanıtlar>"],
-  "thesis_summary": "<180-280 karakter, 2-3 TAM cümlelik doğal ve profesyonel analist notu>",
+  "thesis_summary": "<2-3 cümlelik dengeli sentez>",
   "catalysts": ["<90-150 karakterlik TAM ve bağımsız analiz cümlesi>", "<gerekirse ikinci TAM cümle>"],
   "risks": ["<90-150 karakterlik TAM ve bağımsız risk cümlesi>", "<gerekirse ikinci TAM cümle>"],
   "verdict": "<HIGH CONVICTION | ATTRACTIVE | WATCH | WEAKENING içinden biri>"
@@ -2442,11 +2443,21 @@ def build_previous_day_top10_map(history, exclude_date):
         return {}
     latest = max(prior, key=lambda h: h.get("date", ""))
     ranked = sorted(latest.get("ranking", []), key=lambda x: x.get("rank", 9999))[:10]
-    return {item.get("ticker"): item for item in ranked if item.get("ticker")}
+    return {
+        item.get("ticker"): {**item, "date": latest.get("date")}
+        for item in ranked if item.get("ticker")
+    }
 
 def save_state(ranking):
     today_str = datetime.now(TR_TZ).strftime("%Y-%m-%d")
-    state = {"date": today_str, "ranking": ranking}
+    state = {
+        "date": today_str,
+        "app_version": APP_VERSION,
+        "scoring_version": SCORING_VERSION,
+        "valuation_version": VALUATION_VERSION,
+        "case_engine_version": CASE_ENGINE_VERSION,
+        "ranking": ranking,
+    }
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
@@ -2602,6 +2613,10 @@ def _new_case(ticker, item, rank, active, history, today):
         "top10_exit_date": None,
         "close_date": None,
         "close_reason": None,
+        "app_version": APP_VERSION,
+        "scoring_version": SCORING_VERSION,
+        "valuation_version": VALUATION_VERSION,
+        "case_engine_version": CASE_ENGINE_VERSION,
     }
     _copy_case_metrics(rec, item)
     active["cases"][ticker] = rec
@@ -2666,6 +2681,10 @@ def _append_daily_snapshot(daily, rec, item, rank, today):
         "roe": _safe_float(item.get("roe")),
         "net_debt_to_equity": _safe_float(item.get("net_debt_to_equity")),
         "cfo_to_net_income": _safe_float(item.get("cfo_to_net_income")),
+        "app_version": APP_VERSION,
+        "scoring_version": SCORING_VERSION,
+        "valuation_version": VALUATION_VERSION,
+        "case_engine_version": CASE_ENGINE_VERSION,
     }
     arr = daily.setdefault("cases", {}).setdefault(case_id, [])
     # Manuel aynı-gün testleri istatistiği şişirmesin: aynı tarih snapshot'ı güncellenir.
@@ -2673,6 +2692,171 @@ def _append_daily_snapshot(daily, rec, item, rank, today):
         arr[-1] = snapshot
     else:
         arr.append(snapshot)
+
+
+def _restore_case_from_daily_history(ticker, active, history, daily, previous_item, previous_date):
+    """Önceki günün final TOP10'unda olan ticker için aktif case kaybolmuşsa onarır.
+
+    Bu, workflow/state geçişlerinde oluşabilecek yapay günlük case resetlerini engeller.
+    Gerçek bir TOP10 çıkışı varsa ticker zaten önceki günün final TOP10'unda olmayacağı
+    için bu fonksiyon devreye girmez.
+    """
+    if ticker in active.get("cases", {}):
+        return active["cases"][ticker]
+
+    # Önce günlük snapshot'lardan gerçek case kimliğini geri bul.
+    best = None
+    for case_id, arr in daily.get("cases", {}).items():
+        if not arr:
+            continue
+        for snap in reversed(arr):
+            if snap.get("ticker") == ticker and snap.get("date") == previous_date:
+                best = (case_id, arr, snap)
+                break
+        if best:
+            break
+
+    if best:
+        case_id, arr, snap = best
+        # Aynı case yanlışlıkla history'ye kapanmışsa history'den çıkarıp yeniden aktive et.
+        closed = None
+        closed_cases = history.get("closed_cases", [])
+        for i in range(len(closed_cases)-1, -1, -1):
+            c = closed_cases[i]
+            if c.get("case_id") == case_id:
+                closed = closed_cases.pop(i)
+                break
+        if closed:
+            rec = dict(closed)
+            rec["close_date"] = None
+            rec["close_reason"] = None
+            rec.pop("exit_price", None)
+            rec.pop("exit_rank", None)
+            rec.pop("case_return_pct", None)
+            rec.pop("outcome", None)
+        else:
+            rec = {
+                "case_id": case_id,
+                "case_seq": snap.get("case_seq") or 1,
+                "ticker": ticker,
+                "status": snap.get("status") or "ACTIVE_OPPORTUNITY",
+                "entry_date": arr[0].get("date") or previous_date,
+                "entry_price": snap.get("entry_price") or previous_item.get("price"),
+                "entry_rank": previous_item.get("rank"),
+                "entry_alpha": previous_item.get("alpha_score"),
+                "entry_fundamental": previous_item.get("fundamental_score"),
+                "entry_technical": previous_item.get("technical_score"),
+                "entry_bear_fv": previous_item.get("bear_fv"),
+                "entry_base_fv": previous_item.get("base_fv"),
+                "entry_bull_fv": previous_item.get("bull_fv"),
+                "last_seen_date": previous_date,
+                "last_rank": previous_item.get("rank"),
+                "days_tracked": len({x.get("date") for x in arr if x.get("date")}),
+                "base_reached_date": None,
+                "base_reached_price": None,
+                "max_price": snap.get("price"),
+                "min_price": snap.get("price"),
+                "max_alpha": snap.get("alpha_score"),
+                "min_base_gap_pct": snap.get("base_upside_pct"),
+                "top10_exit_date": None,
+                "close_date": None,
+                "close_reason": None,
+            }
+            _copy_case_metrics(rec, previous_item)
+        rec["app_version"] = APP_VERSION
+        rec["scoring_version"] = SCORING_VERSION
+        rec["valuation_version"] = VALUATION_VERSION
+        rec["case_engine_version"] = CASE_ENGINE_VERSION
+        active.setdefault("cases", {})[ticker] = rec
+        print(f"  [CASE-ONARILDI {ticker}] {case_id} | önceki final TOP10 ile devam")
+        return rec
+
+    # Snapshot yoksa (eski sürümden geçiş) önceki günkü final TOP10 kaydından
+    # tek seferlik continuity case oluştur.
+    seq = _case_sequence_for_ticker(ticker, active, history)
+    case_id = _make_case_id(ticker, previous_date, seq)
+    gap = _safe_float(previous_item.get("base_upside_pct"))
+    rec = {
+        "case_id": case_id, "case_seq": seq, "ticker": ticker,
+        "status": "APPROACHING_BASE" if gap is not None and 0 < gap < APPROACHING_ENTRY_PCT else "ACTIVE_OPPORTUNITY",
+        "entry_date": previous_date, "entry_price": _safe_float(previous_item.get("price")),
+        "entry_rank": previous_item.get("rank"), "entry_alpha": _safe_float(previous_item.get("alpha_score")),
+        "entry_fundamental": _safe_float(previous_item.get("fundamental_score")),
+        "entry_technical": _safe_float(previous_item.get("technical_score")),
+        "entry_bear_fv": _safe_float(previous_item.get("bear_fv")),
+        "entry_base_fv": _safe_float(previous_item.get("base_fv")),
+        "entry_bull_fv": _safe_float(previous_item.get("bull_fv")),
+        "last_seen_date": previous_date, "last_rank": previous_item.get("rank"),
+        "days_tracked": 1, "base_reached_date": None, "base_reached_price": None,
+        "max_price": _safe_float(previous_item.get("price")), "min_price": _safe_float(previous_item.get("price")),
+        "max_alpha": _safe_float(previous_item.get("alpha_score")), "min_base_gap_pct": gap,
+        "top10_exit_date": None, "close_date": None, "close_reason": None,
+        "app_version": APP_VERSION, "scoring_version": SCORING_VERSION,
+        "valuation_version": VALUATION_VERSION, "case_engine_version": CASE_ENGINE_VERSION,
+    }
+    _copy_case_metrics(rec, previous_item)
+    active.setdefault("cases", {})[ticker] = rec
+    print(f"  [CASE-MIGRASYON {ticker}] {case_id} | önceki TOP10'dan continuity case oluşturuldu")
+    return rec
+
+
+def reconcile_case_continuity(previous_day_top10_map, active, history, daily):
+    """Önceki taramanın final TOP10'unda bulunan hisselerin aktif case'ini garanti eder.
+
+    V5.14/V5.16 geçişinde oluşmuş olabilecek sahte günlük case resetlerini de
+    tek seferlik onarır: ticker dün final TOP10'da ise ve bugün yeni case açılmış
+    görünürken eski case bugün TOP10_EXIT ile kapanmışsa, eski case yeniden aktive
+    edilir; bugünkü yapay case snapshot'ı silinir.
+    """
+    if not previous_day_top10_map:
+        return
+    today = datetime.now(TR_TZ).strftime("%Y-%m-%d")
+    previous_dates = [x.get("date") or x.get("_history_date") for x in previous_day_top10_map.values()]
+    previous_date = max([d for d in previous_dates if d] or [None])
+    if not previous_date:
+        previous_date = max([h.get("date") for h in load_full_history() if h.get("date") and h.get("date") < today], default=None)
+    if not previous_date:
+        return
+
+    for ticker, previous_item in previous_day_top10_map.items():
+        current = active.get("cases", {}).get(ticker)
+
+        # Bugünkü yapay reset'i yakala: yeni case bugün açılmış ama ticker dün de
+        # final TOP10'daydı. Eski kapanmış case'i geri getir.
+        if current and current.get("entry_date") == today:
+            closed_cases = history.get("closed_cases", [])
+            restore_idx = None
+            for i in range(len(closed_cases)-1, -1, -1):
+                c = closed_cases[i]
+                if (
+                    c.get("ticker") == ticker
+                    and c.get("close_date") == today
+                    and c.get("close_reason") == "TOP10_EXIT"
+                    and (c.get("entry_date") or "") <= previous_date
+                ):
+                    restore_idx = i
+                    break
+            if restore_idx is not None:
+                old = closed_cases.pop(restore_idx)
+                bogus_case_id = current.get("case_id")
+                if bogus_case_id:
+                    daily.get("cases", {}).pop(bogus_case_id, None)
+                old["close_date"] = None
+                old["close_reason"] = None
+                old.pop("exit_price", None)
+                old.pop("exit_rank", None)
+                old.pop("case_return_pct", None)
+                old.pop("outcome", None)
+                old["app_version"] = APP_VERSION
+                old["scoring_version"] = SCORING_VERSION
+                old["valuation_version"] = VALUATION_VERSION
+                old["case_engine_version"] = CASE_ENGINE_VERSION
+                active["cases"][ticker] = old
+                print(f"  [CASE-BİRLEŞTİR {ticker}] {bogus_case_id} iptal -> {old.get('case_id')} devam")
+                continue
+
+        if ticker not in active.get("cases", {}):
+            _restore_case_from_daily_history(ticker, active, history, daily, previous_item, previous_date)
 
 
 def augment_candidates_with_active_cases(candidates_df, active_store):
@@ -2746,6 +2930,7 @@ def update_case_lifecycle(ranked, analyzed, active, history, daily):
         # ACTIVE / APPROACHING ana TOP10 case'i
         if tk in top10_map:
             rank, item = top10_map[tk]
+            print(f"  [CASE-DEVAM {tk}] {rec.get('case_id')} | gün={int(rec.get('days_tracked', 0)) + 1} | rank=#{rank}")
             _copy_case_metrics(rec, item)
             gap = _safe_float(item.get("base_upside_pct"))
             rec["last_seen_date"] = today
@@ -2840,19 +3025,13 @@ def fmt(v, suffix=""):
         return str(v)
 
 
-def _safe_float(v, default=None):
-    """Sayısal değeri güvenli şekilde float'a çevirir.
-
-    `v` boş/N/A/geçersiz ise `default` döner. Case-history katmanında
-    önceki değer yoksa güncel değeri fallback olarak kullanabilmek için
-    default parametresi desteklenir.
-    """
+def _safe_float(v):
     try:
         if v is None or v == "N/A":
-            return default
+            return None
         return float(v)
     except (TypeError, ValueError):
-        return default
+        return None
 
 
 FINAL_ALPHA_MIN_ACTIVE = 45.0
@@ -2870,54 +3049,6 @@ FINAL_ALPHA_MIN_ACTIVE = 45.0
 MIN_FUNDAMENTAL_SCORE_ACTIVE = 55.0
 MIN_BASE_UPSIDE_PCT_ACTIVE = 8.0
 
-# Base'e çok yaklaşmış yeni bir aday sırf %8 eşiğinin altında diye otomatik
-# elenmez. Ancak bu istisna normal girişten daha seçicidir: şirketin temel
-# kalitesi yeterli olmalı, Final Alpha zayıf olmamalı ve Bull/Upside senaryosu
-# iki ajan tarafından da ölçülebilir kanıtlarla doğrulanmış olmalıdır.
-NEAR_BASE_BULL_MIN_FUNDAMENTAL = 60.0
-NEAR_BASE_BULL_MIN_FINAL_ALPHA = 55.0
-NEAR_BASE_BULL_MIN_GAP_PCT = 12.0
-
-
-def _near_base_bull_exception(item, fundamental, final_alpha):
-    """0-%8 Base alanı olan YENİ aday için kontrollü Bull-case istisnası.
-
-    Valuation discipline katmanı zaten bull_fv'yi yalnızca Bull Agent + CRO
-    birlikte desteklediyse ve ölçülebilir evidence varsa korur. Burada ek
-    olarak kalite ve kalan Bull alanı aranır.
-    """
-    bull_fv = _safe_float(item.get("bull_fv"))
-    price = _safe_float(item.get("price"))
-    upside_status = str(item.get("upside_case_status", "")).upper()
-    evidence = item.get("upside_evidence") or []
-
-    if not bull_fv or not price or price <= 0:
-        return False, None, "destekli Bull FV yok"
-
-    bull_gap_pct = ((bull_fv / price) - 1.0) * 100.0
-
-    if fundamental < NEAR_BASE_BULL_MIN_FUNDAMENTAL:
-        return False, bull_gap_pct, (
-            f"yakın-Base istisnası için fundamental {fundamental:.1f} < "
-            f"{NEAR_BASE_BULL_MIN_FUNDAMENTAL:.1f}"
-        )
-    if final_alpha < NEAR_BASE_BULL_MIN_FINAL_ALPHA:
-        return False, bull_gap_pct, (
-            f"yakın-Base istisnası için Final Alpha {final_alpha:.1f} < "
-            f"{NEAR_BASE_BULL_MIN_FINAL_ALPHA:.1f}"
-        )
-    if upside_status != "SUPPORTED" or not evidence:
-        return False, bull_gap_pct, "Bull/Upside senaryosu ölçülebilir kanıtla desteklenmiyor"
-    if bull_gap_pct < NEAR_BASE_BULL_MIN_GAP_PCT:
-        return False, bull_gap_pct, (
-            f"destekli Bull alanı yalnızca %{bull_gap_pct:.1f}; "
-            f"asgari %{NEAR_BASE_BULL_MIN_GAP_PCT:.1f} aranıyor"
-        )
-
-    return True, bull_gap_pct, (
-        f"yakın-Base istisnası: destekli Bull-case var, Bull alanı %{bull_gap_pct:.1f}"
-    )
-
 
 def _opportunity_gate(item, fundamental, final_alpha, continuing_case=False):
     price = _safe_float(item.get("price"))
@@ -2930,53 +3061,30 @@ def _opportunity_gate(item, fundamental, final_alpha, continuing_case=False):
 
     base_upside_pct = ((base_fv / price) - 1.0) * 100.0
 
-    # Fundamental kalite her durumda ön şarttır. Teknik/Bull senaryosu bunu
-    # tek başına telafi edemez.
     if fundamental < MIN_FUNDAMENTAL_SCORE_ACTIVE:
         return False, base_upside_pct, (
             f"fundamental skor {fundamental:.1f} < {MIN_FUNDAMENTAL_SCORE_ACTIVE:.1f}"
         )
 
-    # Final Alpha da her aktif ana-list case'i için asgari seviyede olmalı.
+    # Yeni bir case ancak en az %8 Base alanı varken ana fırsat havuzuna girebilir.
+    # FAKAT hâlihazırda TOP10 case'i olan bir hisse %8'in altına düştü diye
+    # listeden atılmaz; Base'e gerçekten ulaşana kadar ranking'de kalabilir.
+    if base_upside_pct <= 0:
+        return False, base_upside_pct, (
+            f"güncel fiyat Base FV'yi fiyatlamış/aşmış (Base fark %{base_upside_pct:.1f})"
+        )
+    if base_upside_pct < MIN_BASE_UPSIDE_PCT_ACTIVE and not continuing_case:
+        return False, base_upside_pct, (
+            f"yeni case için Base fark yalnızca %{base_upside_pct:.1f}; "
+            f"giriş eşiği %{MIN_BASE_UPSIDE_PCT_ACTIVE:.1f}"
+        )
+
     if final_alpha < FINAL_ALPHA_MIN_ACTIVE:
         return False, base_upside_pct, (
             f"Final Alpha {final_alpha:.1f} < {FINAL_ALPHA_MIN_ACTIVE:.1f}"
         )
 
-    # Base gerçekleşmiş/aşılmışsa YENİ bir ana fırsat case'i açmayız.
-    # Mevcut case'lerde ise lifecycle katmanı destekli Bull-case varsa
-    # BULL_CASE_WATCH'a geçirir; yoksa case'i kapatır.
-    if base_upside_pct <= 0:
-        return False, base_upside_pct, (
-            f"güncel fiyat Base FV'yi fiyatlamış/aşmış (Base fark %{base_upside_pct:.1f}); "
-            "mevcut case varsa Bull-case lifecycle kontrolüne gider"
-        )
-
-    # Hâlihazırda TOP10 case'i olan hisse %8'in altına düştü diye atılmaz.
-    # Sadece APPROACHING_BASE statüsüne geçer ve ranking'de kalır.
-    if continuing_case:
-        if base_upside_pct < MIN_BASE_UPSIDE_PCT_ACTIVE:
-            return True, base_upside_pct, (
-                f"mevcut case APPROACHING_BASE olarak devam ediyor; Base fark %{base_upside_pct:.1f}"
-            )
-        return True, base_upside_pct, "mevcut case uygun"
-
-    # Yeni adaylarda %8+ Base alanı normal giriş yoludur.
-    if base_upside_pct >= MIN_BASE_UPSIDE_PCT_ACTIVE:
-        return True, base_upside_pct, "uygun"
-
-    # Yeni aday 0-%8 aralığındaysa kör eleme yapmak yerine destekli Bull-case
-    # kontrol edilir. İstisna geçerse yeni case APPROACHING_BASE olarak açılır.
-    bull_ok, bull_gap_pct, bull_reason = _near_base_bull_exception(
-        item, fundamental, final_alpha
-    )
-    if bull_ok:
-        return True, base_upside_pct, bull_reason
-
-    return False, base_upside_pct, (
-        f"Base fark yalnızca %{base_upside_pct:.1f}; normal giriş eşiği "
-        f"%{MIN_BASE_UPSIDE_PCT_ACTIVE:.1f}. Bull-case istisnası da geçmedi: {bull_reason}"
-    )
+    return True, base_upside_pct, "uygun"
 
 
 def assign_final_alpha_scores(analyzed, continuing_case_tickers=None):
@@ -2984,8 +3092,7 @@ def assign_final_alpha_scores(analyzed, continuing_case_tickers=None):
 
     Akış:
         1) CRO'nun güncel fundamental analizi ve Base FV'si alınır.
-        2) Fundamental fırsat filtresi uygulanır. Base farkı %8'in altındaki yeni
-           adaylarda destekli Bull-case istisnası ayrıca kontrol edilir.
+        2) Fundamental fırsat filtresi uygulanır.
         3) Yalnızca filtreden geçen hisseler için Final Alpha sıralaması yapılır.
 
     Final Alpha = Fundamental %70 + Teknik %30
@@ -3138,6 +3245,7 @@ def main():
     last_seen_map = build_last_seen_map(full_history, exclude_date=today_str)
     previous_day_top10_map = build_previous_day_top10_map(full_history, exclude_date=today_str)
     active_cases, case_history, case_daily_history = load_case_store()
+    reconcile_case_continuity(previous_day_top10_map, active_cases, case_history, case_daily_history)
     candidates_df = augment_candidates_with_active_cases(candidates_df, active_cases)
 
     print(f"Round 2: {len(candidates_df)} aday için Gemini analizi başlıyor...")
@@ -3251,6 +3359,10 @@ def main():
             "roe": r.get("roe"),
             "net_debt_to_equity": r.get("net_debt_to_equity"),
             "cfo_to_net_income": r.get("cfo_to_net_income"),
+            "app_version": APP_VERSION,
+            "scoring_version": SCORING_VERSION,
+            "valuation_version": VALUATION_VERSION,
+            "case_engine_version": CASE_ENGINE_VERSION,
             "verdict": r.get("verdict"),
         }
         for r in ranked[:15]
