@@ -197,7 +197,7 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # --------------------------------------------------------------------------
 # VERSIONING — istatistiklerde metodoloji değişimini ayırmak için
 # --------------------------------------------------------------------------
-APP_VERSION = "V5.17"
+APP_VERSION = "V5.19"
 SCORING_VERSION = "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3"
 VALUATION_VERSION = "BASE_UPSIDE_DISCIPLINE_V2"
 CASE_ENGINE_VERSION = "CASE_LIFECYCLE_V3"
@@ -1393,9 +1393,14 @@ Bull FV: {bull_fv}
 
 KAMUYA AÇIK KART DİLİ:
 - Final catalysts ve risks maddelerini yeniden yaz; Bear/Bull çıktısını ham haliyle kopyalamak zorunda değilsin.
-- Her madde tam cümle olsun ve tek başına okunduğunda ne anlatıldığı anlaşılsın.
-- Bir cümlede mümkünse önce somut bulguyu, sonra analitik anlamını ver.
-- 90-150 karakter hedefle; kesinlikle üç nokta (...) veya yarım bırakılmış ifade üretme.
+- Her madde tek başına okunduğunda anlaşılabilen TAM bir cümle olsun.
+- Her maddede mümkünse önce somut bulguyu, sonra bunun şirket açısından analitik anlamını ver.
+- 95-165 karakter hedefle; kesinlikle üç nokta (...), yarım cümle veya başlık dili kullanma.
+- İki catalyst aynı veriyi, iki risk aynı veriyi tekrar etmesin.
+- thesis_summary, catalysts/risks maddelerini yeniden sıralayan bir özet OLMASIN. Bunların ortak anlamını sentezleyen, doğal analist notu gibi 2-3 cümle yaz.
+- thesis_summary yaklaşık 220-320 karakter olsun; şirketin ana tezi, değerleme konumu ve varsa dikkat edilmesi gereken temel dengeyi tek akışta anlatsın.
+- "Öne çıkan yapı", "izlenen alanlar", "tabloyu destekliyor" gibi şablon kalıpları kullanma.
+- Aşırı resmî veya sohbet dili kullanma; deneyimli bir analistin kısa notu gibi yaz.
 - Yatırım eylemi önerme; "al/sat" dili kullanma.
 
 Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
@@ -1409,9 +1414,9 @@ Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
   "base_revision_evidence": ["<önceki analize göre yeni ve maddi kanıtlar>"],
   "upside_case_status": "SUPPORTED | UNSUPPORTED",
   "upside_evidence": ["<Bull FV'yi destekleyen ölçülebilir kanıtlar>"],
-  "thesis_summary": "<2-3 cümlelik dengeli sentez>",
-  "catalysts": ["<90-150 karakterlik TAM ve bağımsız analiz cümlesi>", "<gerekirse ikinci TAM cümle>"],
-  "risks": ["<90-150 karakterlik TAM ve bağımsız risk cümlesi>", "<gerekirse ikinci TAM cümle>"],
+  "thesis_summary": "<220-320 karakter, 2-3 doğal ve profesyonel cümle; catalyst/risk maddelerini tekrar etmeden sentezle>",
+  "catalysts": ["<95-165 karakterlik TAM ve bağımsız analiz cümlesi>", "<95-165 karakterlik ikinci TAM cümle>"],
+  "risks": ["<95-165 karakterlik TAM ve bağımsız risk cümlesi>", "<95-165 karakterlik ikinci TAM cümle>"],
   "verdict": "<HIGH CONVICTION | ATTRACTIVE | WATCH | WEAKENING içinden biri>"
 }}
 """
