@@ -243,39 +243,39 @@ def _compact_text(txt, max_chars=66):
 
 
 def _normalize_text_for_note(txt):
-    txt = _compact_text(txt, 90)
-    txt = txt.replace("%;", "% ")
-    return txt
+    return " ".join(str(txt or "").replace("\n", " ").split()).strip()
 
 
-def _public_points(items, limit=3):
-    """Karttaki katalizör/risk maddelerini TAM cümle olarak korur.
+def _complete_sentence_text(txt, max_chars=175):
+    """Tam cümleyi koru; karakter ortasında üç nokta ile kesme."""
+    txt = _normalize_text_for_note(txt)
+    if not txt:
+        return ""
+    if len(txt) <= max_chars:
+        return txt if txt[-1] in ".!?" else txt + "."
+    # Max sınıra kadar biten son tam cümleyi tercih et.
+    ends = [i for i, ch in enumerate(txt[:max_chars + 1]) if ch in ".!?" and i >= 70]
+    if ends:
+        return txt[:ends[-1] + 1].strip()
+    # Tek cümle beklenenden uzunsa kelime kesmeden, nokta ile tamamla.
+    cut = txt[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:")
+    return cut + "."
 
-    Eski sürüm 72 karakterde üç noktayla kesiyordu; bu bilgi kaybettiriyordu.
-    Ajanlar artık kısa tam cümle üretmeye zorlandığı için burada keyfi truncation yok.
-    Aşırı uzun beklenmedik bir çıktı gelirse ilk TAM cümleyi tercih eder.
-    """
+
+def _public_points(items, limit=2):
+    """Katalizör/risk maddelerini okunabilir TAM cümle halinde gösterir."""
     out = []
     for x in (items or [])[:limit]:
-        txt = " ".join(str(x).replace("\n", " ").split()).strip()
+        txt = _normalize_text_for_note(x)
         replacements = {
             "alım": "pozitif sinyal", "satım": "negatif sinyal", "alınabilir": "izlenebilir",
             "satılabilir": "izlenebilir", "hedef fiyat": "değerleme referansı",
         }
-        low = txt.lower()
         for bad, good in replacements.items():
-            if bad in low:
-                txt = txt.replace(bad, good).replace(bad.capitalize(), good.capitalize())
-
-        # Model istemeden çok uzun paragraf döndürürse yarım kesmek yerine
-        # ilk tamamlanmış cümleyi kullan. Nokta yoksa metni olduğu gibi bırak.
-        if len(txt) > 180:
-            sentence_ends = [i for i, ch in enumerate(txt) if ch in ".!?" and i >= 70]
-            if sentence_ends:
-                txt = txt[:sentence_ends[0] + 1].strip()
-        if txt and txt[-1] not in ".!?":
-            txt += "."
-        out.append(txt)
+            txt = txt.replace(bad, good).replace(bad.capitalize(), good.capitalize())
+        txt = _complete_sentence_text(txt, 175)
+        if txt:
+            out.append(txt)
     return out
 
 
@@ -287,36 +287,32 @@ def _sentence_case(txt):
 
 
 def _profile_summary(item, radar, prev_snapshot=None):
-    """Kart içindeki analist notu: kısa, doğal, hisseye özel ve nötr tonlu."""
+    """Sağ kart için tekrar etmeyen, doğal analist sentezi."""
     ticker = item.get("ticker") or "Bu isim"
     alpha = _safe_float(item.get("alpha_score"), 0) or 0
     technical = _safe_float(item.get("technical_score"), 50) or 50
+    fundamental = _safe_float(item.get("fundamental_score"), None)
     upside = _upside_pct(item)
-    positives = item.get("catalysts") or []
-    risks = item.get("risks") or []
 
-    ordered = sorted(radar.items(), key=lambda kv: kv[1], reverse=True)
-    strong1, strong2 = ordered[0][0], ordered[1][0]
-    weak1 = ordered[-1][0]
-
-    # 1) Açılış cümlesi: mümkün olduğunca doğal ve veri odaklı.
-    if positives:
-        p1 = _normalize_text_for_note(positives[0])
-        if len(positives) > 1:
-            p2 = _normalize_text_for_note(positives[1])
-            lead = f"{ticker}'da {p1}; { _sentence_case(p2) } tabloyu destekliyor."
-        else:
-            lead = f"{ticker}'da {p1} öne çıkıyor."
+    # Öncelik CRO'nun dengeli tez sentezinde. Bu metin catalyst/risk maddelerini
+    # tekrar etmemesi için scanner promptunda ayrıca yönlendiriliyor.
+    thesis = _normalize_text_for_note(item.get("thesis_summary"))
+    if thesis:
+        thesis = _complete_sentence_text(thesis, 330)
     else:
-        if alpha >= 75:
-            lead = f"{ticker}'da {strong1} ve {strong2} tarafı güçlü bir görünüm sunuyor."
-        elif alpha >= 65:
-            lead = f"{ticker}'da {strong1} ve {strong2} tarafı dengeli biçimde öne çıkıyor."
+        ordered = sorted(radar.items(), key=lambda kv: kv[1], reverse=True)
+        strong1, strong2 = ordered[0][0], ordered[1][0]
+        weak1 = ordered[-1][0]
+        if upside is not None:
+            thesis = (
+                f"{ticker} tarafında {strong1} ve {strong2} göstergeleri göreli olarak güçlü kalırken "
+                f"Base senaryo ile fiyat arasındaki fark %{upside:.1f}. {weak1} tarafındaki görünüm tezin ana denge noktası."
+            )
         else:
-            lead = f"{ticker}'da genel görünüm daha dengeli; {strong1} göreli olarak daha olumlu duruyor."
+            thesis = f"{ticker} tarafında {strong1} ve {strong2} göreli olarak öne çıkarken {weak1} tarafı daha sınırlı bir görünüm sunuyor."
 
-    # 2) Güncel taramaya göre değişim / değerleme notu.
-    mid = ""
+    # Önceki taramaya göre yalnız gerçekten anlamlı değişimi tek kısa cümleyle ekle.
+    change_note = ""
     prev_alpha = _safe_float((prev_snapshot or {}).get("alpha_score"))
     prev_base = _safe_float((prev_snapshot or {}).get("base_fv"))
     cur_base = _safe_float(item.get("base_fv"))
@@ -324,43 +320,27 @@ def _profile_summary(item, radar, prev_snapshot=None):
     cur_rank = item.get("rank")
 
     if prev_base and cur_base and prev_base > 0:
-        chg = (cur_base / prev_base - 1) * 100
-        if abs(chg) >= 4:
-            if chg > 0:
-                mid = f"Son taramaya göre base senaryo {prev_base:.0f} TL'den {cur_base:.0f} TL'ye yukarı revize edildi."
-            else:
-                mid = f"Son taramaya göre base senaryo {prev_base:.0f} TL'den {cur_base:.0f} TL'ye çekildi."
-    if not mid and prev_alpha is not None and abs(alpha - prev_alpha) >= 4:
-        direction = "güçlenmiş" if alpha > prev_alpha else "zayıflamış"
-        mid = f"Alpha Score önceki taramaya göre {direction} görünüyor."
-    if not mid and prev_rank is not None and cur_rank is not None and prev_rank != cur_rank:
-        if cur_rank < prev_rank:
-            mid = f"Önceki taramaya göre sıralamada yukarı taşınmış durumda."
-        else:
-            mid = f"Önceki taramaya göre sıralamada bir miktar geri çekilme var."
-    if not mid and upside is not None:
-        if upside >= 15:
-            mid = f"Base senaryo ile mevcut fiyat arasındaki fark %{upside:.1f} seviyesinde kalıyor."
-        elif upside >= 5:
-            mid = f"Base senaryo ile mevcut fiyat arasında %{upside:.1f} düzeyinde sınırlı ama pozitif bir fark bulunuyor."
-        elif upside >= 0:
-            mid = f"Base senaryo ile fiyat arasındaki fark %{upside:.1f} ile daralmış durumda."
-        else:
-            mid = f"Mevcut fiyat, base senaryonun %{abs(upside):.1f} üzerinde seyrediyor."
+        base_chg = (cur_base / prev_base - 1) * 100
+        if abs(base_chg) >= 5:
+            change_note = f"Base senaryo önceki taramaya göre %{abs(base_chg):.1f} {'yukarı' if base_chg > 0 else 'aşağı'} güncellendi."
+    if not change_note and prev_alpha is not None and abs(alpha - prev_alpha) >= 6:
+        change_note = f"Alpha Score önceki taramaya göre {abs(alpha-prev_alpha):.1f} puan {'arttı' if alpha > prev_alpha else 'geriledi'}."
+    if not change_note and prev_rank is not None and cur_rank is not None:
+        try:
+            rank_diff = int(prev_rank) - int(cur_rank)
+            if abs(rank_diff) >= 3:
+                change_note = f"Sıralama önceki taramaya göre {abs(rank_diff)} basamak {'yukarı' if rank_diff > 0 else 'aşağı'} değişti."
+        except Exception:
+            pass
 
-    # 3) İzlenen ana başlık.
-    if risks:
-        r1 = _normalize_text_for_note(risks[0])
-        tail = f"İzlenen ana başlık ise { _sentence_case(r1) }."
-    else:
-        if technical <= 35:
-            tail = f"İzlenen ana başlık ise Teknik taraftaki görece zayıf görünüm."
-        else:
-            tail = f"İzlenen ana başlık ise {weak1} tarafındaki göreli zayıflık."
-
-    note = f"{lead} {mid} {tail}"
-    return _compact_text(note, 250)
-
+    note = (thesis + (" " + change_note if change_note else "")).strip()
+    # Kart alanı yaklaşık 350 karakteri rahat taşıyor. Tam cümleyi koru, üç nokta kullanma.
+    if len(note) <= 370:
+        return note
+    ends = [i for i, ch in enumerate(note[:370]) if ch in ".!?" and i >= 180]
+    if ends:
+        return note[:ends[-1] + 1].strip()
+    return _complete_sentence_text(note, 370)
 
 def score_cell_class(alpha):
     a = _safe_float(alpha, 0) or 0
@@ -579,10 +559,10 @@ def build_weekly_context(entries, agg, summary_text=None):
         event_cards.append({"n": 2, "title": "Haftalık skor liderliği", "text": f"{x['ticker']} hafta boyunca ortalama {x['avg_alpha']:.1f} Alpha Score ile üst grupta kaldı."})
     if movements:
         up = max(movements, key=lambda x: x["alpha_change"])
-        event_cards.append({"n": 3, "title": "Skor hareketi izlendi", "text": f"{up['ticker']} tarafında haftalık Alpha Score değişimi {up['alpha_change']:+.1f} puan olarak kaydedildi."})
+        event_cards.append({"n": 3, "title": f"{up['ticker']} skorunda belirgin değişim", "text": f"{up['ticker']} haftayı başlangıca göre {up['alpha_change']:+.1f} puan Alpha Score değişimiyle tamamladı."})
     if decliners:
         d = decliners[0]
-        event_cards.append({"n": 4, "title": "Göreli zayıflama görüldü", "text": f"{d['ticker']} haftayı başlangıca göre {d['alpha_change']:+.1f} puan Alpha değişimiyle tamamladı."})
+        event_cards.append({"n": 4, "title": f"{d['ticker']} haftayı daha düşük skorla kapattı", "text": f"{d['ticker']} tarafında haftalık Alpha Score değişimi {d['alpha_change']:+.1f} puan oldu; bu veri tek başına neden-sonuç yorumu içermez."})
     while len(event_cards) < 4:
         event_cards.append({"n": len(event_cards)+1, "title": "Veri akışı", "text": "Hafta içindeki sıralama ve skor değişimleri karşılaştırmalı olarak izlenmeye devam etti."})
 
