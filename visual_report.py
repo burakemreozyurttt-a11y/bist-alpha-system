@@ -1,4 +1,5 @@
 import math
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -285,76 +286,80 @@ def _sentence_case(txt):
     return txt[0].lower() + txt[1:]
 
 
-def _sanitize_public_note(txt):
-    """Kart notunu doğal, tamamlanmış cümleler halinde tutar."""
-    txt = " ".join(str(txt or "").replace("\n", " ").split()).strip()
-    if not txt:
-        return ""
-    txt = txt.replace("...", ".").replace("…", ".")
-    sentences = re.split(r'(?<=[.!?])\\s+(?=[A-ZÇĞİÖŞÜ0-9])', txt)
-    clean = []
-    for sentence in sentences:
-        sentence = sentence.strip(" ;")
-        if not sentence:
-            continue
-        if sentence[-1] not in ".!?":
-            if len(sentence) < 55:
-                continue
-            sentence += "."
-        clean.append(sentence)
-    if not clean:
-        return txt if txt[-1:] in ".!?" else txt + "."
-    selected = []
-    total = 0
-    for sentence in clean[:3]:
-        prospective = total + len(sentence) + (1 if selected else 0)
-        if selected and prospective > 320:
-            break
-        selected.append(sentence)
-        total = prospective
-    return " ".join(selected)
-
-
 def _profile_summary(item, radar, prev_snapshot=None):
-    """Kartın sağındaki doğal analist notu."""
-    thesis = _sanitize_public_note(item.get("thesis_summary"))
-    if thesis:
-        return thesis
-
+    """Kart içindeki analist notu: kısa, doğal, hisseye özel ve nötr tonlu."""
     ticker = item.get("ticker") or "Bu isim"
     alpha = _safe_float(item.get("alpha_score"), 0) or 0
     technical = _safe_float(item.get("technical_score"), 50) or 50
     upside = _upside_pct(item)
+    positives = item.get("catalysts") or []
+    risks = item.get("risks") or []
 
     ordered = sorted(radar.items(), key=lambda kv: kv[1], reverse=True)
     strong1, strong2 = ordered[0][0], ordered[1][0]
     weak1 = ordered[-1][0]
 
-    if alpha >= 70:
-        first = f"{ticker}'da {strong1} ve {strong2} tarafı genel görünümü destekleyen başlıca alanlar."
-    elif alpha >= 58:
-        first = f"{ticker}'da görünüm dengeli; {strong1} ve {strong2} göreli olarak daha güçlü kalıyor."
-    else:
-        first = f"{ticker}'da fırsat profili daha seçici; {strong1} tarafı olumlu olsa da genel tablo karışık."
-
-    if upside is not None:
-        if upside >= 15:
-            second = f"Base senaryo ile mevcut fiyat arasında %{upside:.1f} değerleme alanı bulunuyor."
-        elif upside >= 5:
-            second = f"Base senaryo ile mevcut fiyat arasındaki fark %{upside:.1f} ile sınırlı ama pozitif."
-        elif upside >= 0:
-            second = f"Base senaryo ile fiyat arasındaki fark %{upside:.1f} seviyesine kadar daralmış durumda."
+    # 1) Açılış cümlesi: mümkün olduğunca doğal ve veri odaklı.
+    if positives:
+        p1 = _normalize_text_for_note(positives[0])
+        if len(positives) > 1:
+            p2 = _normalize_text_for_note(positives[1])
+            lead = f"{ticker}'da {p1}; { _sentence_case(p2) } tabloyu destekliyor."
         else:
-            second = f"Mevcut fiyat Base senaryonun %{abs(upside):.1f} üzerinde seyrediyor."
+            lead = f"{ticker}'da {p1} öne çıkıyor."
     else:
-        second = "Base senaryoya ilişkin karşılaştırma için yeterli fiyatlama verisi bulunmuyor."
+        if alpha >= 75:
+            lead = f"{ticker}'da {strong1} ve {strong2} tarafı güçlü bir görünüm sunuyor."
+        elif alpha >= 65:
+            lead = f"{ticker}'da {strong1} ve {strong2} tarafı dengeli biçimde öne çıkıyor."
+        else:
+            lead = f"{ticker}'da genel görünüm daha dengeli; {strong1} göreli olarak daha olumlu duruyor."
 
-    if technical <= 35:
-        third = "Teknik yapı şu aşamada görünümün en zayıf taraflarından biri."
+    # 2) Güncel taramaya göre değişim / değerleme notu.
+    mid = ""
+    prev_alpha = _safe_float((prev_snapshot or {}).get("alpha_score"))
+    prev_base = _safe_float((prev_snapshot or {}).get("base_fv"))
+    cur_base = _safe_float(item.get("base_fv"))
+    prev_rank = (prev_snapshot or {}).get("rank")
+    cur_rank = item.get("rank")
+
+    if prev_base and cur_base and prev_base > 0:
+        chg = (cur_base / prev_base - 1) * 100
+        if abs(chg) >= 4:
+            if chg > 0:
+                mid = f"Son taramaya göre base senaryo {prev_base:.0f} TL'den {cur_base:.0f} TL'ye yukarı revize edildi."
+            else:
+                mid = f"Son taramaya göre base senaryo {prev_base:.0f} TL'den {cur_base:.0f} TL'ye çekildi."
+    if not mid and prev_alpha is not None and abs(alpha - prev_alpha) >= 4:
+        direction = "güçlenmiş" if alpha > prev_alpha else "zayıflamış"
+        mid = f"Alpha Score önceki taramaya göre {direction} görünüyor."
+    if not mid and prev_rank is not None and cur_rank is not None and prev_rank != cur_rank:
+        if cur_rank < prev_rank:
+            mid = f"Önceki taramaya göre sıralamada yukarı taşınmış durumda."
+        else:
+            mid = f"Önceki taramaya göre sıralamada bir miktar geri çekilme var."
+    if not mid and upside is not None:
+        if upside >= 15:
+            mid = f"Base senaryo ile mevcut fiyat arasındaki fark %{upside:.1f} seviyesinde kalıyor."
+        elif upside >= 5:
+            mid = f"Base senaryo ile mevcut fiyat arasında %{upside:.1f} düzeyinde sınırlı ama pozitif bir fark bulunuyor."
+        elif upside >= 0:
+            mid = f"Base senaryo ile fiyat arasındaki fark %{upside:.1f} ile daralmış durumda."
+        else:
+            mid = f"Mevcut fiyat, base senaryonun %{abs(upside):.1f} üzerinde seyrediyor."
+
+    # 3) İzlenen ana başlık.
+    if risks:
+        r1 = _normalize_text_for_note(risks[0])
+        tail = f"İzlenen ana başlık ise { _sentence_case(r1) }."
     else:
-        third = f"Yakından izlenmesi gereken ana başlık {weak1} tarafındaki göreli zayıflık."
+        if technical <= 35:
+            tail = f"İzlenen ana başlık ise Teknik taraftaki görece zayıf görünüm."
+        else:
+            tail = f"İzlenen ana başlık ise {weak1} tarafındaki göreli zayıflık."
 
-    return _sanitize_public_note(f"{first} {second} {third}")
+    note = f"{lead} {mid} {tail}"
+    return _compact_text(note, 250)
 
 
 def score_cell_class(alpha):
