@@ -31,6 +31,8 @@ Notlar / bilinen sınırlamalar (MVP aşaması):
 import io
 import json
 import os
+import hashlib
+import copy
 import random
 import re
 import sys
@@ -102,9 +104,10 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 # düşürülebiliyor). Bu yüzden birden fazla modeli sırayla deniyoruz ki bir
 # tanesi kısıtlanırsa/kaldırılırsa sistem tamamen durmasın.
 MODEL_CANDIDATES = [
+    # V5.20: loglarda 404 verdiği doğrulanan eski 2.5 modeller kaldırıldı.
+    # Bear/Bull/CRO bağımsız ajan mimarisi korunuyor; çağrı sayısı günlük
+    # yeniden-analiz ihtiyacına göre düşürülüyor.
     "gemini-3.5-flash-lite",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
     "gemini-3.6-flash",
 ]
 _model_start_idx = 0   # bir model bu çalıştırmada arızalı/tükenmiş bulunursa ileri kaydırılır
@@ -144,13 +147,26 @@ ITEM_DEPRECIATION = "4B"           # Amortisman Giderleri
 # ve sadece CACHE_MAX_AGE_DAYS'ten eski kayıtları yeniliyoruz.
 FIN_CACHE_FILE = os.path.join(os.path.dirname(__file__), "financials_cache.json")
 CACHE_MAX_AGE_DAYS = 7
-CACHE_SAVE_EVERY = 25              # her N şirkette bir önbelleği diske yaz (kesinti olursa ilerleme kaybolmasın)
+FIN_REFRESH_BUDGET_PER_RUN = 30   # stale cache bir günde topluca 603 şirketi yeniden çekmesin
+_fin_refreshes_this_run = 0
+CACHE_SAVE_EVERY = 10              # her N şirkette bir önbelleği diske yaz (kesinti olursa ilerleme kaybolmasın)
 
 # --- Faz 5: RAG (Faaliyet Raporu Analizi) ----------------------------------
 # Faaliyet raporları çeyrekte bir yayınlanır, bilanço gibi bunu da önbelleğe
 # alıyoruz ama çok daha uzun süre taze sayıyoruz (rapor zaten aylarca aynı).
 REPORT_CACHE_FILE = os.path.join(os.path.dirname(__file__), "report_excerpts_cache.json")
 REPORT_CACHE_MAX_AGE_DAYS = 60
+
+# --- V5.20: Persistent Multi-Agent Fundamental Thesis ----------------------
+# Bear/Bull/CRO çıktısı temel veri gerçekten değişene kadar yeniden kullanılabilir.
+# Böylece üç bağımsız ajan korunur fakat aynı bilanço için her gün 3 yeni LLM
+# çağrısı yapılmaz.
+THESIS_CACHE_FILE = os.path.join(os.path.dirname(__file__), "fundamental_thesis_cache.json")
+THESIS_MAX_AGE_DAYS = 30
+THESIS_PRICE_REVIEW_PCT = 0.15      # analiz fiyatından ±%15 uzaklaşınca yeniden değerlendir
+THESIS_BASE_REVIEW_PCT = 0.08       # fiyat Base'e %8 yaklaşınca yeniden değerlendir
+THESIS_CACHE_VERSION = "PERSISTENT_MULTI_AGENT_V1"
+MAX_FULL_REANALYSES_PER_RUN = 6   # 3 bağımsız ajan x 6 şirket = en fazla 18 ana Gemini çağrısı
 REPORT_NOT_FOUND_RETRY_DAYS = 3     # "rapor bulunamadı" sonucu çok daha kısa süre önbelleklenir
 
 # Faz 5 (RAG) şimdilik RAFA KALDIRILDI: KAP'ın bildirim sayfası JavaScript ile
@@ -197,7 +213,7 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # --------------------------------------------------------------------------
 # VERSIONING — istatistiklerde metodoloji değişimini ayırmak için
 # --------------------------------------------------------------------------
-APP_VERSION = "V5.19"
+APP_VERSION = "V5.20"
 SCORING_VERSION = "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3"
 VALUATION_VERSION = "BASE_UPSIDE_DISCIPLINE_V2"
 CASE_ENGINE_VERSION = "CASE_LIFECYCLE_V3"
@@ -866,6 +882,7 @@ def compute_fundamentals(ticker):
         "deleveraging": None, "cfo_to_net_income": None,
         "_eps_annualized": None, "_net_income_annualized": None,
         "_equity_latest": None,
+        "_financial_period": None,
     }
 
     df = _fetch_financials_df(ticker)
@@ -879,6 +896,7 @@ def compute_fundamentals(ticker):
     try:
         # --- Kümülatif (yıl-başından-bugüne) değerler -----------------------
         revenue_latest, revenue_prior, period = _latest_and_prior_year(df, ITEM_REVENUE, quarter_cols)
+        out["_financial_period"] = period
         net_income_latest, net_income_prior, _ = _latest_and_prior_year(df, ITEM_NET_INCOME_PARENT, quarter_cols)
         eps_latest, _, _ = _latest_and_prior_year(df, ITEM_EPS, quarter_cols)
         equity_latest, _, _ = _latest_and_prior_year(df, ITEM_PARENT_EQUITY, quarter_cols)
@@ -1019,22 +1037,36 @@ def save_fin_cache(cache):
 
 
 def get_fundamentals_cached(ticker, cache):
-    """Önbellekte taze (CACHE_MAX_AGE_DAYS'ten yeni) kayıt varsa onu kullanır,
-    yoksa İş Yatırım'dan çeker ve önbelleğe yazar.
-    Bilançolar çeyrekte bir değiştiği için bu, her gün 720 şirketin
-    bilançosunu yeniden çekmeyi (saatler) gereksiz kılıyor."""
+    """V5.20 rolling refresh.
+
+    Taze cache doğrudan kullanılır. Stale kayıt varsa yalnızca günlük yenileme
+    bütçesi dolmadıysa ağdan güncellenir; bütçe dolduysa stale ama mevcut veri
+    o gün için kullanılmaya devam eder. Böylece 7. günde yüzlerce bilanço aynı
+    anda yeniden çekilmez. Cache'i olmayan yeni hisseler ise bütçeden bağımsız
+    olarak çekilir; aksi halde sisteme hiç giremezler.
+    """
+    global _fin_refreshes_this_run
     today = datetime.now(TR_TZ).date()
     entry = cache.get(ticker)
+    age_days = None
     if entry and entry.get("fetched_at"):
         try:
             fetched = datetime.strptime(entry["fetched_at"], "%Y-%m-%d").date()
-            if (today - fetched).days < CACHE_MAX_AGE_DAYS:
-                return entry["data"], False   # False = ağdan çekilmedi
+            age_days = (today - fetched).days
+            if age_days < CACHE_MAX_AGE_DAYS:
+                return entry["data"], False
         except Exception:
-            pass
+            age_days = None
+
+    # Stale kayıt var ama günlük rolling-refresh bütçesi dolmuşsa kullanılabilir
+    # son bilançoyu koru; bilançolar zaten çeyreklik değişiyor.
+    if entry and entry.get("data") is not None and _fin_refreshes_this_run >= FIN_REFRESH_BUDGET_PER_RUN:
+        return entry["data"], False
 
     data = compute_fundamentals(ticker)
     cache[ticker] = {"fetched_at": today.strftime("%Y-%m-%d"), "data": data}
+    if entry is not None:
+        _fin_refreshes_this_run += 1
     return data, True
 
 
@@ -1422,6 +1454,173 @@ Yalnızca aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
 """
 
 
+def load_thesis_cache():
+    if not os.path.exists(THESIS_CACHE_FILE):
+        return {"version": THESIS_CACHE_VERSION, "tickers": {}}
+    try:
+        with open(THESIS_CACHE_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        if not isinstance(raw, dict):
+            return {"version": THESIS_CACHE_VERSION, "tickers": {}}
+        raw.setdefault("version", THESIS_CACHE_VERSION)
+        raw.setdefault("tickers", {})
+        return raw
+    except Exception as e:
+        print(f"[THESIS-CACHE] okunamadı, boş cache ile devam: {e}")
+        return {"version": THESIS_CACHE_VERSION, "tickers": {}}
+
+
+def save_thesis_cache(cache):
+    try:
+        cache["version"] = THESIS_CACHE_VERSION
+        with open(THESIS_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[THESIS-CACHE] yazılamadı: {e}")
+
+
+def _fingerprint_value(v):
+    if v is None:
+        return None
+    try:
+        if pd.isna(v):
+            return None
+    except Exception:
+        pass
+    if isinstance(v, (float, np.floating)):
+        return round(float(v), 6)
+    if isinstance(v, (int, np.integer)):
+        return int(v)
+    return str(v)
+
+
+def fundamental_input_fingerprint(candidate):
+    """Fiyat/teknik hareketi hariç, Bear/Bull/CRO tezini gerçekten değiştiren
+    temel girdilerin deterministik hash'i. F/K ve PD/DD özellikle dışarıda;
+    bunlar fiyatla her gün değişip gereksiz yeniden analiz üretmesin."""
+    keys = [
+        "_financial_period", "revenue_growth", "earnings_growth",
+        "revenue_acceleration", "earnings_acceleration",
+        "gross_margin_trend", "operating_margin_trend", "roe",
+        "debt_to_equity", "net_debt_to_equity", "deleveraging",
+        "cfo_to_net_income", "report_period", "report_excerpt",
+    ]
+    payload = {k: _fingerprint_value(candidate.get(k)) for k in keys}
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def thesis_reanalysis_reason(candidate, cached_entry, active_case=None):
+    """None => eski çok-ajan tezini güvenle yeniden kullan.
+    String => Bear/Bull/CRO tam zincirini yeniden çalıştır."""
+    if not cached_entry or not cached_entry.get("result"):
+        return "NEW_CANDIDATE"
+    if cached_entry.get("legacy_seed"):
+        return "LEGACY_BOOTSTRAP_REVIEW"
+
+    fp = fundamental_input_fingerprint(candidate)
+    if cached_entry.get("input_fingerprint") != fp:
+        return "FUNDAMENTAL_INPUT_CHANGED"
+
+    analyzed_at = cached_entry.get("analyzed_at")
+    if analyzed_at:
+        try:
+            age = (datetime.now(TR_TZ).date() - datetime.strptime(analyzed_at, "%Y-%m-%d").date()).days
+            if age >= THESIS_MAX_AGE_DAYS:
+                return "PERIODIC_30D_REVIEW"
+        except Exception:
+            return "CACHE_DATE_INVALID"
+
+    old_price = _safe_float(cached_entry.get("analysis_price"))
+    price = _safe_float(candidate.get("price"))
+    if old_price and price and abs(price / old_price - 1.0) >= THESIS_PRICE_REVIEW_PCT:
+        return "PRICE_MOVE_15PCT"
+
+    base_fv = _safe_float((cached_entry.get("result") or {}).get("base_fv"))
+    if base_fv and price and base_fv > 0:
+        gap = (base_fv - price) / price
+        if 0.0 <= gap < THESIS_BASE_REVIEW_PCT:
+            # Base'e yaklaşan aktif tezi her gün yeniden çalıştırmak yerine,
+            # yalnızca önceki analiz zaten bu eşikte değilse review tetikle.
+            prev_gap = None
+            if old_price:
+                prev_gap = (base_fv - old_price) / old_price
+            if prev_gap is None or prev_gap >= THESIS_BASE_REVIEW_PCT:
+                return "BASE_GAP_BELOW_8"
+
+    if active_case and active_case.get("status") == "BULL_CASE_WATCH":
+        last_review = cached_entry.get("bull_watch_reviewed_at")
+        today = datetime.now(TR_TZ).strftime("%Y-%m-%d")
+        if last_review != today:
+            return "BULL_CASE_WATCH_REVIEW"
+
+    return None
+
+
+def _legacy_seed_result(row, previous_item, active_case=None):
+    """V5.20 ilk geçiş günü için: önceki başarılı taramada kaydedilmiş
+    CRO/FV/fundamental değerlerinden geçici bir tez kaydı oluşturur. Yeni LLM
+    görüşü uydurmaz; metin alanlarını açıkça geçiş notu olarak işaretler.
+    Sonraki çalıştırmalarda LEGACY_BOOTSTRAP_REVIEW tetiklenir ve günlük bütçe
+    elverdikçe gerçek Bear/Bull/CRO zinciriyle yenilenir."""
+    if not previous_item:
+        return None
+    fundamental = _safe_float(previous_item.get("fundamental_score"))
+    if fundamental is None:
+        fundamental = _safe_float(previous_item.get("alpha_score"))
+    base_fv = _safe_float(previous_item.get("base_fv"))
+    if fundamental is None or base_fv is None:
+        return None
+    conf = _safe_float((active_case or {}).get("data_confidence"))
+    return {
+        "ticker": row.get("ticker"),
+        "name": row.get("name", row.get("ticker")),
+        "price": row.get("price"),
+        "alpha_score": fundamental,
+        "data_confidence": conf if conf is not None else 0,
+        "bear_fv": previous_item.get("bear_fv"),
+        "base_fv": previous_item.get("base_fv"),
+        "bull_fv": previous_item.get("bull_fv"),
+        "base_revision_status": previous_item.get("base_revision_status", "UNCHANGED"),
+        "base_revision_evidence": previous_item.get("base_revision_evidence") or [],
+        "upside_case_status": previous_item.get("upside_case_status", "UNSUPPORTED"),
+        "upside_evidence": previous_item.get("upside_evidence") or [],
+        "verdict": previous_item.get("verdict", "WATCH"),
+        "thesis_summary": "Önceki geçerli fundamental tez korunuyor; V5.20 geçişinde bağımsız Bear, Bull ve CRO yeniden doğrulaması sıraya alınmıştır.",
+        "catalysts": [],
+        "risks": [],
+        "thesis_reused": True,
+        "thesis_legacy_seed": True,
+    }
+
+
+def _refresh_reused_result(result, row):
+    """LLM tezini/fair value'yu korurken günlük fiyat ve mekanik Round-1
+    alanlarını günceller."""
+    result = copy.deepcopy(result)
+    result["ticker"] = row.get("ticker")
+    result["name"] = row.get("name", row.get("ticker"))
+    result["price"] = row.get("price")
+    result["low_liquidity_flag"] = bool(row.get("low_liquidity_flag"))
+    result["screening_score"] = round(float(row.get("screening_score", 0) or 0), 1)
+    result["cap_bucket"] = row.get("cap_bucket")
+    for field in [
+        "score_valuation", "score_momentum", "score_acceleration", "score_margin",
+        "score_balance", "score_divergence", "cfo_to_net_income", "roe",
+        "revenue_growth", "earnings_growth", "revenue_acceleration",
+        "earnings_acceleration", "gross_margin_trend", "operating_margin_trend",
+        "net_debt_to_equity", "debt_to_equity",
+    ]:
+        v = row.get(field)
+        try:
+            result[field] = None if pd.isna(v) else float(v)
+        except Exception:
+            result[field] = v
+    result["_return_20d"] = row.get("return_20d")
+    result["_return_60d"] = row.get("return_60d")
+    result["thesis_reused"] = True
+    return result
+
 def _call_gemini_json(prompt, label):
     """Model yedekleme zincirini kullanarak Gemini'den JSON yanıt alır.
     Bear/Bull/CRO ajanlarının üçü de bu ortak fonksiyonu kullanır."""
@@ -1686,6 +1885,7 @@ def _build_candidate_for_agents(row, report_excerpt=None, report_period=None):
         "liquidity_note": "  [UYARI: DÜŞÜK LİKİDİTE — işlem hacmi sığ]" if row.get("low_liquidity_flag") else "",
         "report_excerpt": report_excerpt if report_excerpt else "N/A",
         "report_period": report_period if report_period else "bilinmiyor",
+        "_financial_period": row.get("_financial_period"),
     }
     for f in pct_fields:
         out[f] = _fmt_for_prompt(row.get(f), as_pct=True)
@@ -2333,30 +2533,100 @@ def compute_technical_score(ticker, current_price, return_20d=None, return_60d=N
     return technical_score, raw, meta
 
 
-def round2_deep_analysis(candidates_df, last_seen_map=None):
+def round2_deep_analysis(candidates_df, last_seen_map=None, active_cases=None):
+    """V5.20 Persistent Multi-Agent Fundamental Thesis.
+
+    Bear/Bull/CRO üç bağımsız çağrı olarak kalır. Ancak yalnızca yeni aday,
+    değişen fundamental fingerprint, 30 günlük zorunlu review, ±%15 fiyat
+    hareketi, Base'e ilk kez %8 yaklaşma veya Bull Watch durumunda yeniden
+    çalıştırılır. Diğer adaylarda son geçerli CRO tezi/FV/skoru yeniden kullanılır.
+    """
     results = []
     records = candidates_df.to_dict("records")
     report_cache = load_report_cache()
+    thesis_cache = load_thesis_cache()
+    thesis_tickers = thesis_cache.setdefault("tickers", {})
+    active_case_map = (active_cases or {}).get("cases", {}) if isinstance(active_cases, dict) else {}
     report_fetched_count = 0
+    reused_count = 0
+    reanalyzed_count = 0
+    failed_count = 0
+    deferred_count = 0
+    full_reanalysis_used = 0
+
+    # Aktif case'ler önce işlensin. İlk V5.20 geçiş gününde günlük LLM bütçesi
+    # yetmezse mevcut case'ler yanlışlıkla kaybolmasın.
+    records.sort(key=lambda r: (0 if r.get("ticker") in active_case_map else 1, -float(r.get("screening_score", 0) or 0)))
 
     for i, row in enumerate(records, 1):
         ticker = row["ticker"]
-        print(f"  Derin analiz {i}/{len(records)}: {ticker} (Bear -> Bull -> CRO)")
 
         if RAG_ENABLED:
             report_excerpt, report_period = get_report_excerpt_cached(ticker, report_cache)
             report_fetched_count += 1
             if report_fetched_count % 5 == 0:
-                save_report_cache(report_cache)   # kesinti olursa ilerleme kaybolmasın
-            time.sleep(1.0)   # KAP'a da nazik davranalım
+                save_report_cache(report_cache)
+            time.sleep(1.0)
         else:
             report_excerpt, report_period = None, None
 
         candidate = _build_candidate_for_agents(row, report_excerpt, report_period)
+        cached_entry = thesis_tickers.get(ticker)
+        active_case = active_case_map.get(ticker)
+
+        # V5.20 ilk çalıştırmada thesis cache boş olabilir. Önceki başarılı
+        # günlük history varsa bunu yalnızca geçiş/fallback amacıyla seed et.
+        if cached_entry is None:
+            previous_item = (last_seen_map or {}).get(ticker)
+            legacy_result = _legacy_seed_result(row, previous_item, active_case=active_case)
+            if legacy_result is not None:
+                cached_entry = {
+                    "analyzed_at": previous_item.get("date") or datetime.now(TR_TZ).strftime("%Y-%m-%d"),
+                    "analysis_price": previous_item.get("price") or row.get("price"),
+                    "input_fingerprint": fundamental_input_fingerprint(candidate),
+                    "cache_version": THESIS_CACHE_VERSION,
+                    "legacy_seed": True,
+                    "result": legacy_result,
+                }
+                thesis_tickers[ticker] = cached_entry
+
+        reason = thesis_reanalysis_reason(candidate, cached_entry, active_case=active_case)
+
+        if reason is None:
+            result = _refresh_reused_result(cached_entry["result"], row)
+            result["thesis_cache_age_days"] = None
+            try:
+                result["thesis_cache_age_days"] = (
+                    datetime.now(TR_TZ).date() - datetime.strptime(cached_entry["analyzed_at"], "%Y-%m-%d").date()
+                ).days
+            except Exception:
+                pass
+            print(f"  Derin analiz {i}/{len(records)}: {ticker} [TEZ-CACHE] yeniden kullanıldı")
+            results.append(result)
+            reused_count += 1
+            continue
+
+        if full_reanalysis_used >= MAX_FULL_REANALYSES_PER_RUN:
+            if cached_entry and cached_entry.get("result"):
+                result = _refresh_reused_result(cached_entry["result"], row)
+                result["thesis_reused"] = True
+                result["thesis_reanalysis_deferred"] = True
+                result["thesis_reanalysis_reason"] = reason
+                print(f"  Derin analiz {i}/{len(records)}: {ticker} [TEZ-DEFER] tetik={reason}; günlük tam analiz bütçesi doldu")
+                results.append(result)
+                reused_count += 1
+                deferred_count += 1
+                continue
+            print(f"  Derin analiz {i}/{len(records)}: {ticker} [TEZ-DEFER] yeni aday; günlük tam analiz bütçesi doldu, sonraki güne ertelendi")
+            failed_count += 1
+            deferred_count += 1
+            continue
+
+        print(f"  Derin analiz {i}/{len(records)}: {ticker} (Bear -> Bull -> CRO) | tetik={reason}")
+        full_reanalysis_used += 1
         result = analyze_with_gemini(candidate, (last_seen_map or {}).get(ticker))
         if result:
             # Data Confidence LLM'in tek başına 100 vermesine bırakılmıyor.
-            # Sayısal veri tamlığı ve kullanılan kaynak katmanı ile tavan uygulanır.
             try:
                 numeric_completeness_pct = float(row.get("data_completeness", 0)) * 100.0
             except (TypeError, ValueError):
@@ -2370,30 +2640,46 @@ def round2_deep_analysis(candidates_df, last_seen_map=None):
             result["data_confidence_raw"] = result.get("data_confidence")
             result["data_confidence"] = int(round(max(0.0, adjusted_conf)))
 
-            # Round 1'den gelen sayısal verileri de sakla (rapor/hafıza için)
-            result["low_liquidity_flag"] = bool(row.get("low_liquidity_flag"))
-            result["screening_score"] = round(float(row.get("screening_score", 0)), 1)
-            result["cap_bucket"] = row.get("cap_bucket")
-            # V5 görsel radar ve açıklanabilirlik için Round-1 bileşenlerini sakla.
-            for _field in [
-                "score_valuation", "score_momentum", "score_acceleration",
-                "score_margin", "score_balance", "score_divergence",
-                "cfo_to_net_income", "roe", "revenue_growth",
-                "earnings_growth", "revenue_acceleration", "earnings_acceleration",
-                "net_debt_to_equity", "debt_to_equity"
-            ]:
-                _v = row.get(_field)
-                try:
-                    result[_field] = None if pd.isna(_v) else float(_v)
-                except Exception:
-                    result[_field] = _v
-            result["had_report_excerpt"] = bool(report_excerpt)
-            result["_return_20d"] = row.get("return_20d")
-            result["_return_60d"] = row.get("return_60d")
+            result = _refresh_reused_result(result, row)
+            result["thesis_reused"] = False
+            result["thesis_reanalysis_reason"] = reason
+            today = datetime.now(TR_TZ).strftime("%Y-%m-%d")
+            entry = {
+                "analyzed_at": today,
+                "analysis_price": row.get("price"),
+                "input_fingerprint": fundamental_input_fingerprint(candidate),
+                "cache_version": THESIS_CACHE_VERSION,
+                "result": copy.deepcopy(result),
+            }
+            if reason == "BULL_CASE_WATCH_REVIEW":
+                entry["bull_watch_reviewed_at"] = today
+            thesis_tickers[ticker] = entry
+            save_thesis_cache(thesis_cache)  # her başarılı tam analiz sonrası güvenli checkpoint
             results.append(result)
-        time.sleep(SLEEP_BETWEEN_GEMINI_CALLS)
+            reanalyzed_count += 1
+            time.sleep(SLEEP_BETWEEN_GEMINI_CALLS)
+        else:
+            # Yeni analiz başarısız olduysa ve eski bir tez varsa taramayı çöpe atma;
+            # stale tezi açıkça işaretleyerek kullan. Yeni adayda cache yoksa atla.
+            if cached_entry and cached_entry.get("result"):
+                result = _refresh_reused_result(cached_entry["result"], row)
+                result["thesis_reused"] = True
+                result["thesis_stale_fallback"] = True
+                result["thesis_reanalysis_reason"] = reason
+                print(f"  [TEZ-FALLBACK {ticker}] Gemini başarısız; son geçerli tez kullanıldı")
+                results.append(result)
+                reused_count += 1
+            else:
+                print(f"  [TEZ-ATLANDI {ticker}] yeni aday için Gemini sonucu yok; bu turda finale alınmadı")
+                failed_count += 1
 
     save_report_cache(report_cache)
+    save_thesis_cache(thesis_cache)
+    print(
+        f"[THESIS-CACHE] yeniden kullanılan={reused_count} | tam yeniden analiz={reanalyzed_count} | "
+        f"ertelenen={deferred_count} | cache'siz başarısız/ertelenen={failed_count} | "
+        f"tam-analiz bütçesi={MAX_FULL_REANALYSES_PER_RUN} şirket | toplam sonuç={len(results)}/{len(records)}"
+    )
     return results
 
 
@@ -3259,15 +3545,15 @@ def main():
     reconcile_case_continuity(previous_day_top10_map, active_cases, case_history, case_daily_history)
     candidates_df = augment_candidates_with_active_cases(candidates_df, active_cases)
 
-    print(f"Round 2: {len(candidates_df)} aday için Gemini analizi başlıyor...")
+    print(f"Round 2: {len(candidates_df)} aday için Persistent Multi-Agent analiz başlıyor...")
     if "cap_bucket" in candidates_df.columns:
         cap_counts = candidates_df["cap_bucket"].value_counts().to_dict()
         print("[ÖLÇEK-DAĞILIMI ROUND2] " + " | ".join(
             f"{bucket}={cap_counts.get(bucket, 0)}" for bucket in ["Büyük", "Orta", "Küçük"]
         ))
-    analyzed = round2_deep_analysis(candidates_df, last_seen_map=last_seen_map)
+    analyzed = round2_deep_analysis(candidates_df, last_seen_map=last_seen_map, active_cases=active_cases)
     if not analyzed:
-        send_telegram_message("⚠️ Gemini analizinden sonuç alınamadı, lütfen logları kontrol et.")
+        send_telegram_message("⚠️ Fundamental tez katmanından sonuç alınamadı; Gemini erişimi ve thesis cache loglarını kontrol et.")
         return
 
     print("Teknik Analiz Katmanı: 22 finalist için hesaplanıyor (fundamental %70 + teknik %30)...")
@@ -3374,6 +3660,9 @@ def main():
             "scoring_version": SCORING_VERSION,
             "valuation_version": VALUATION_VERSION,
             "case_engine_version": CASE_ENGINE_VERSION,
+            "thesis_reused": r.get("thesis_reused"),
+            "thesis_reanalysis_reason": r.get("thesis_reanalysis_reason"),
+            "thesis_stale_fallback": r.get("thesis_stale_fallback", False),
             "verdict": r.get("verdict"),
         }
         for r in ranked[:15]
