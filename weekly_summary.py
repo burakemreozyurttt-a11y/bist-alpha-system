@@ -28,16 +28,17 @@ from google.genai import types
 from visual_report import render_weekly_report
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 # scanner.py'deki ile aynı yedekleme zinciri
 MODEL_CANDIDATES = [
     "gemini-3.5-flash-lite",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
     "gemini-3.6-flash",
 ]
+GROQ_MODEL = "openai/gpt-oss-120b"
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
 TR_TZ = timezone(timedelta(hours=3))
@@ -147,6 +148,7 @@ METODOLOJİ DURUMU:
 HAFTALIK VERİ:
 {raw_data}
 """
+
     for model_name in MODEL_CANDIDATES:
         try:
             response = client.models.generate_content(
@@ -154,10 +156,34 @@ HAFTALIK VERİ:
                 contents=prompt,
                 config=types.GenerateContentConfig(temperature=0.35),
             )
+            print(f"[HAFTALIK-LLM] Gemini/{model_name} kullanıldı")
             return response.text.strip()
         except Exception as e:
-            print(f"  {model_name} başarısız: {e}")
+            print(f"  [HAFTALIK-LLM] Gemini/{model_name} başarısız: {e}")
             continue
+    
+    # Gemini erişilemezse haftalık metin için Groq fallback. Telegram'a teknik
+    # sağlık mesajı gönderilmez; yalnız Actions logunda görünür.
+    if GROQ_API_KEY:
+        try:
+            r = requests.post(
+                GROQ_API_URL,
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": GROQ_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.35,
+                },
+                timeout=120,
+            )
+            if r.ok:
+                text_out = (((r.json().get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+                if text_out:
+                    print(f"[HAFTALIK-LLM] Groq/{GROQ_MODEL} fallback kullanıldı")
+                    return text_out
+            print(f"[HAFTALIK-LLM] Groq fallback başarısız HTTP {r.status_code}: {r.text[:300]}")
+        except Exception as e:
+            print(f"[HAFTALIK-LLM] Groq fallback exception: {e}")
     return None
 
 def main():
@@ -186,7 +212,7 @@ def main():
     if methodology_changed:
         # İç sürüm isimleri yalnız logda kalır; kullanıcıya açık rapora yazılmaz.
         print("[HAFTALIK-METODOLOJİ] Hafta içinde birden fazla scoring sürümü kullanıldı: " + ", ".join(versions))
-    print(f"Bu hafta {len(entries)} günlük kayıt, {len(agg)} farklı hisse bulundu. Gemini özeti isteniyor...")
+    print(f"Bu hafta {len(entries)} günlük kayıt, {len(agg)} farklı hisse bulundu. LLM özeti isteniyor...")
     summary_text = summarize_with_gemini(agg, methodology_changed=methodology_changed)
     if methodology_changed and summary_text:
         # Model metodoloji uyarısını unutursa, kullanıcıya teknik kod vermeden tek sade cümle ekle.
@@ -202,8 +228,8 @@ def main():
         message = header + summary_text
     else:
         # Gemini başarısız olursa en azından ham tabloyu gönderelim, boş geçmeyelim
-        print("Gemini özeti alınamadı, ham veriyle devam ediliyor.")
-        message = header + "Gemini özeti oluşturulamadı, bu haftanın ham verileri:\n\n"
+        print("LLM özeti alınamadı, ham veriyle devam ediliyor.")
+        message = header + "LLM özeti oluşturulamadı, bu haftanın ham verileri:\n\n"
         for tk, records in sorted(agg.items(), key=lambda kv: -len(kv[1]))[:15]:
             message += f"{tk}: {len(records)} gün listede\n"
 
