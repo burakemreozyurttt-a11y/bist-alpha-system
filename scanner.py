@@ -90,27 +90,33 @@ except ImportError as _tech_import_error:
 # CONFIG
 # --------------------------------------------------------------------------
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+GEMINI_API_KEY_BACKUP = os.environ.get("GEMINI_API_KEY_BACKUP", "").strip()
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-# Tek bir modele bağımlı kalmıyoruz: gemini-3.6-flash'ın ücretsiz kotası
-# sadece 20 istek/gün çıktı (çok düşük), gemini-2.5-flash-lite ise Google'ın
-# resmi dokümantasyonuna göre 1000 istek/gün sunuyor. Bir model kotası
-# dolarsa ya da erişilemez olursa (404/429) otomatik olarak sıradakine
-# geçiyoruz — her modelin kotası ayrı olduğu için bu bize çok daha büyük
-# birleşik bir günlük bütçe kazandırıyor.
-# Google'ın ücretsiz kotaları şu sıralar sık ve habersiz değişiyor (bazı
-# kullanıcı raporlarına göre lite modeller bile bir anda 20 istek/güne
-# düşürülebiliyor). Bu yüzden birden fazla modeli sırayla deniyoruz ki bir
-# tanesi kısıtlanırsa/kaldırılırsa sistem tamamen durmasın.
-MODEL_CANDIDATES = [
-    # V5.20: loglarda 404 verdiği doğrulanan eski 2.5 modeller kaldırıldı.
-    # Bear/Bull/CRO bağımsız ajan mimarisi korunuyor; çağrı sayısı günlük
-    # yeniden-analiz ihtiyacına göre düşürülüyor.
+# V5.21 — Multi-provider agent router.
+# Bear/Bull öncelikle Groq GPT-OSS 120B üzerinde bağımsız çağrılar olarak
+# çalışır. CRO öncelikle Gemini'de çalışır. 404/429/503 durumunda sağlayıcı
+# zinciri otomatik değişir. Sağlık bilgileri SADECE GitHub Actions loglarına
+# yazılır; Telegram grubuna teknik altyapı mesajı gönderilmez.
+GEMINI_MODEL_CANDIDATES = [
     "gemini-3.5-flash-lite",
     "gemini-3.6-flash",
 ]
-_model_start_idx = 0   # bir model bu çalıştırmada arızalı/tükenmiş bulunursa ileri kaydırılır
+GROQ_MODEL_CANDIDATES = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+]
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
+GEMINI_REQUEST_BUDGET_PER_RUN = 16
+MAX_LLM_RETRIES_PER_TARGET = 1
+
+_llm_health = {
+    "gemini": {"disabled_models": set(), "requests": 0, "success": 0, "fail": 0},
+    "groq": {"disabled_models": set(), "requests": 0, "success": 0, "fail": 0, "remaining_requests": None, "remaining_tokens": None},
+}
 STATE_FILE = os.path.join(os.path.dirname(__file__), "state.json")
 FALLBACK_TICKERS_FILE = os.path.join(os.path.dirname(__file__), "bist_tickers_fallback.csv")
 
@@ -165,8 +171,8 @@ THESIS_CACHE_FILE = os.path.join(os.path.dirname(__file__), "fundamental_thesis_
 THESIS_MAX_AGE_DAYS = 30
 THESIS_PRICE_REVIEW_PCT = 0.15      # analiz fiyatından ±%15 uzaklaşınca yeniden değerlendir
 THESIS_BASE_REVIEW_PCT = 0.08       # fiyat Base'e %8 yaklaşınca yeniden değerlendir
-THESIS_CACHE_VERSION = "PERSISTENT_MULTI_AGENT_V1"
-MAX_FULL_REANALYSES_PER_RUN = 6   # 3 bağımsız ajan x 6 şirket = en fazla 18 ana Gemini çağrısı
+THESIS_CACHE_VERSION = "PERSISTENT_MULTI_AGENT_V2_MULTI_PROVIDER"
+MAX_FULL_REANALYSES_PER_RUN = 10  # Bear/Bull Groq + CRO Gemini; persistent thesis ile günlük üst sınır
 REPORT_NOT_FOUND_RETRY_DAYS = 3     # "rapor bulunamadı" sonucu çok daha kısa süre önbelleklenir
 
 # Faz 5 (RAG) şimdilik RAFA KALDIRILDI: KAP'ın bildirim sayfası JavaScript ile
@@ -209,11 +215,12 @@ MIN_DATA_COMPLETENESS = 0.5                # bu orandan az veri varsa sıralamay
 TR_TZ = timezone(timedelta(hours=3))
 
 client = genai.Client(api_key=GEMINI_API_KEY)
+backup_client = genai.Client(api_key=GEMINI_API_KEY_BACKUP) if GEMINI_API_KEY_BACKUP else None
 
 # --------------------------------------------------------------------------
 # VERSIONING — istatistiklerde metodoloji değişimini ayırmak için
 # --------------------------------------------------------------------------
-APP_VERSION = "V5.20"
+APP_VERSION = "V5.21"
 SCORING_VERSION = "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3"
 VALUATION_VERSION = "BASE_UPSIDE_DISCIPLINE_V2"
 CASE_ENGINE_VERSION = "CASE_LIFECYCLE_V3"
@@ -1621,43 +1628,253 @@ def _refresh_reused_result(result, row):
     result["thesis_reused"] = True
     return result
 
-def _call_gemini_json(prompt, label):
-    """Model yedekleme zincirini kullanarak Gemini'den JSON yanıt alır.
-    Bear/Bull/CRO ajanlarının üçü de bu ortak fonksiyonu kullanır."""
-    global _model_start_idx
-    last_error = None
-    for idx in range(_model_start_idx, len(MODEL_CANDIDATES)):
-        model_name = MODEL_CANDIDATES[idx]
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.3,
-                ),
-            )
-            data = json.loads(response.text)
-            if idx != _model_start_idx:
-                print(f"  [Model geçişi] {label}: bu istek için {model_name} kullanıldı")
-            return data
-        except Exception as e:
-            last_error = e
-            err_str = str(e)
-            if "NOT_FOUND" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                print(f"  {model_name} kalıcı olarak kullanılamıyor ({label}): {e}")
-                if idx == _model_start_idx:
-                    _model_start_idx = idx + 1
-                continue
-            elif "UNAVAILABLE" in err_str:
-                print(f"  {model_name} geçici olarak meşgul ({label}), sıradaki model deneniyor")
-                continue
-            else:
-                print(f"  Gemini hatası ({label}): {e}")
-                return None
 
-    print(f"  Tüm modeller tükendi/erişilemedi ({label}): {last_error}")
+def _safe_json_from_text(text):
+    if text is None:
+        return None
+    text = str(text).strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        m = re.search(r"\{.*\}", text, flags=re.S)
+        if not m:
+            return None
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            return None
+
+
+def _update_groq_rate_headers(headers):
+    try:
+        rem_req = headers.get("x-ratelimit-remaining-requests")
+        rem_tok = headers.get("x-ratelimit-remaining-tokens")
+        if rem_req is not None:
+            _llm_health["groq"]["remaining_requests"] = rem_req
+        if rem_tok is not None:
+            _llm_health["groq"]["remaining_tokens"] = rem_tok
+    except Exception:
+        pass
+
+
+def _groq_models_healthcheck():
+    if not GROQ_API_KEY:
+        print("[LLM-HEALTH] Groq: API key yok -> DISABLED")
+        return
+    try:
+        r = requests.get(
+            GROQ_MODELS_URL,
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            timeout=15,
+        )
+        if r.ok:
+            ids = {m.get("id") for m in (r.json().get("data") or []) if isinstance(m, dict)}
+            approved = [m for m in GROQ_MODEL_CANDIDATES if m in ids]
+            missing = [m for m in GROQ_MODEL_CANDIDATES if m not in ids]
+            print(f"[LLM-HEALTH] Groq READY | approved_available={approved or 'none'}")
+            if missing:
+                print(f"[LLM-HEALTH] Groq approved model bulunamadı/erişimsiz: {missing}")
+            # Yeni modeller yalnız loglanır; otomatik production'a alınmaz.
+            candidates = sorted([x for x in ids if x and x not in GROQ_MODEL_CANDIDATES])[:8]
+            if candidates:
+                print(f"[LLM-DISCOVERY] Groq yeni/diğer modeller görüldü; otomatik kullanılmayacak: {candidates}")
+        else:
+            print(f"[LLM-HEALTH] Groq healthcheck HTTP {r.status_code}; runtime fallback ile devam")
+    except Exception as e:
+        print(f"[LLM-HEALTH] Groq healthcheck başarısız: {e}; runtime fallback ile devam")
+
+
+
+def _gemini_models_healthcheck():
+    try:
+        names = set()
+        for m in client.models.list():
+            name = getattr(m, "name", None) or getattr(m, "id", None)
+            if name:
+                name = str(name).split("/")[-1]
+                names.add(name)
+        if names:
+            approved = [m for m in GEMINI_MODEL_CANDIDATES if m in names]
+            missing = [m for m in GEMINI_MODEL_CANDIDATES if m not in names]
+            print(f"[LLM-HEALTH] Gemini READY | approved_available={approved or 'none'}")
+            for model_name in missing:
+                _llm_health["gemini"]["disabled_models"].add(model_name)
+            if missing:
+                print(f"[LLM-HEALTH] Gemini approved model bulunamadı/erişimsiz: {missing}")
+            discovered = sorted([n for n in names if n not in GEMINI_MODEL_CANDIDATES and ("flash" in n.lower() or "pro" in n.lower())])[:8]
+            if discovered:
+                print(f"[LLM-DISCOVERY] Gemini yeni/diğer modeller görüldü; otomatik kullanılmayacak: {discovered}")
+        else:
+            print("[LLM-HEALTH] Gemini model listesi boş; runtime kontrolüyle devam")
+    except Exception as e:
+        print(f"[LLM-HEALTH] Gemini healthcheck başarısız: {e}; runtime kontrolüyle devam")
+
+def _print_llm_health_summary():
+    g = _llm_health["groq"]
+    gm = _llm_health["gemini"]
+    print(
+        "[LLM-HEALTH-SUMMARY] "
+        f"Groq req={g['requests']} ok={g['success']} fail={g['fail']} "
+        f"remaining_req={g.get('remaining_requests')} remaining_tok={g.get('remaining_tokens')} | "
+        f"Gemini req={gm['requests']} ok={gm['success']} fail={gm['fail']} "
+        f"budget={GEMINI_REQUEST_BUDGET_PER_RUN} disabled={sorted(gm['disabled_models'])}"
+    )
+
+
+def _call_groq_json(prompt, label, preferred_models=None):
+    if not GROQ_API_KEY:
+        return None
+    models = preferred_models or GROQ_MODEL_CANDIDATES
+    last_error = None
+    for model_name in models:
+        if model_name in _llm_health["groq"]["disabled_models"]:
+            continue
+        for attempt in range(MAX_LLM_RETRIES_PER_TARGET + 1):
+            try:
+                _llm_health["groq"]["requests"] += 1
+                payload = {
+                    "model": model_name,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "response_format": {"type": "json_object"},
+                }
+                r = requests.post(
+                    GROQ_API_URL,
+                    headers={
+                        "Authorization": f"Bearer {GROQ_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=120,
+                )
+                _update_groq_rate_headers(r.headers)
+                if r.status_code == 404:
+                    _llm_health["groq"]["disabled_models"].add(model_name)
+                    _llm_health["groq"]["fail"] += 1
+                    print(f"  [LLM-MODEL-DISABLED] Groq/{model_name} 404 ({label})")
+                    break
+                if r.status_code == 429:
+                    _llm_health["groq"]["fail"] += 1
+                    print(f"  [LLM-FAILOVER] Groq/{model_name} 429 ({label}); sıradaki modele/provider'a geçiliyor")
+                    break
+                if r.status_code >= 500:
+                    last_error = f"HTTP {r.status_code}: {r.text[:300]}"
+                    if attempt < MAX_LLM_RETRIES_PER_TARGET:
+                        time.sleep(2 + attempt * 2)
+                        continue
+                    _llm_health["groq"]["fail"] += 1
+                    print(f"  [LLM-FAILOVER] Groq/{model_name} {r.status_code} ({label})")
+                    break
+                if not r.ok:
+                    _llm_health["groq"]["fail"] += 1
+                    print(f"  Groq hatası {r.status_code} ({label}): {r.text[:500]}")
+                    break
+                content = (((r.json().get("choices") or [{}])[0].get("message") or {}).get("content"))
+                data = _safe_json_from_text(content)
+                if not isinstance(data, dict):
+                    _llm_health["groq"]["fail"] += 1
+                    print(f"  Groq JSON parse hatası ({label}, {model_name}); fallback")
+                    break
+                _llm_health["groq"]["success"] += 1
+                data["_llm_provider"] = "groq"
+                data["_llm_model"] = model_name
+                return data
+            except Exception as e:
+                last_error = e
+                if attempt < MAX_LLM_RETRIES_PER_TARGET:
+                    time.sleep(2 + attempt * 2)
+                    continue
+                _llm_health["groq"]["fail"] += 1
+                print(f"  Groq exception ({label}, {model_name}): {e}")
+                break
+    if last_error:
+        print(f"  Groq zinciri sonuç vermedi ({label}): {last_error}")
     return None
+
+
+def _call_gemini_client_json(gclient, client_name, prompt, label):
+    if gclient is None:
+        return None
+    if _llm_health["gemini"]["requests"] >= GEMINI_REQUEST_BUDGET_PER_RUN:
+        print(f"  [LLM-BUDGET] Gemini run bütçesi doldu ({label}); fallback provider'a geçiliyor")
+        return None
+    last_error = None
+    for model_name in GEMINI_MODEL_CANDIDATES:
+        if model_name in _llm_health["gemini"]["disabled_models"]:
+            continue
+        for attempt in range(MAX_LLM_RETRIES_PER_TARGET + 1):
+            try:
+                _llm_health["gemini"]["requests"] += 1
+                response = gclient.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.3,
+                    ),
+                )
+                data = _safe_json_from_text(response.text)
+                if not isinstance(data, dict):
+                    raise ValueError("JSON parse edilemedi")
+                _llm_health["gemini"]["success"] += 1
+                data["_llm_provider"] = client_name
+                data["_llm_model"] = model_name
+                return data
+            except Exception as e:
+                last_error = e
+                err = str(e)
+                if "NOT_FOUND" in err or "404" in err:
+                    _llm_health["gemini"]["disabled_models"].add(model_name)
+                    _llm_health["gemini"]["fail"] += 1
+                    print(f"  [LLM-MODEL-DISABLED] {client_name}/{model_name} 404 ({label})")
+                    break
+                if "RESOURCE_EXHAUSTED" in err or "429" in err:
+                    _llm_health["gemini"]["fail"] += 1
+                    print(f"  [LLM-FAILOVER] {client_name}/{model_name} 429 ({label}); provider değiştiriliyor")
+                    return None
+                if "UNAVAILABLE" in err or "503" in err:
+                    if attempt < MAX_LLM_RETRIES_PER_TARGET:
+                        time.sleep(3 + attempt * 2)
+                        continue
+                    _llm_health["gemini"]["fail"] += 1
+                    print(f"  [LLM-FAILOVER] {client_name}/{model_name} 503 ({label}); sıradaki model deneniyor")
+                    break
+                _llm_health["gemini"]["fail"] += 1
+                print(f"  Gemini hatası ({label}, {client_name}/{model_name}): {e}")
+                break
+    if last_error:
+        print(f"  {client_name} zinciri sonuç vermedi ({label}): {last_error}")
+    return None
+
+
+def _call_gemini_json(prompt, label):
+    data = _call_gemini_client_json(client, "gemini-primary", prompt, label)
+    if data is not None:
+        return data
+    if backup_client is not None:
+        data = _call_gemini_client_json(backup_client, "gemini-backup", prompt, label)
+        if data is not None:
+            print(f"  [LLM-FAILOVER] {label}: Gemini backup kullanıldı")
+            return data
+    return None
+
+
+def _call_agent_json(prompt, label, role):
+    role = str(role).upper()
+    if role in {"BEAR", "BULL"}:
+        # Ana rota: güçlü açık model. Gemini kotası CRO için korunur.
+        data = _call_groq_json(prompt, label, ["openai/gpt-oss-120b", "openai/gpt-oss-20b"])
+        if data is not None:
+            return data
+        print(f"  [LLM-FAILOVER] {label}: Groq -> Gemini")
+        return _call_gemini_json(prompt, label)
+
+    # CRO en kritik sentez katmanı: önce Gemini, sonra Groq.
+    data = _call_gemini_json(prompt, label)
+    if data is not None:
+        return data
+    print(f"  [LLM-FAILOVER] {label}: Gemini -> Groq")
+    return _call_groq_json(prompt, label, ["openai/gpt-oss-120b", "openai/gpt-oss-20b"])
 
 
 def _previous_valuation_block(prev):
@@ -1763,20 +1980,20 @@ def _validate_valuation_output(cro, candidate, prev, ticker, bull=None):
     return cro
 
 
-def analyze_with_gemini(candidate, prev_snapshot=None):
+def analyze_with_multi_llm(candidate, prev_snapshot=None):
     """Bear -> Bull -> CRO üç aşamalı analiz zinciri. Herhangi bir aşama
     başarısız olursa (tüm modeller tükenirse) None döner, o hisse atlanır."""
     data_block = DATA_BLOCK_TEMPLATE.format(**candidate)
     ticker = candidate["ticker"]
 
     bear_prompt = BEAR_PROMPT_TEMPLATE.format(data_block=data_block)
-    bear = _call_gemini_json(bear_prompt, f"{ticker}-BEAR")
+    bear = _call_agent_json(bear_prompt, f"{ticker}-BEAR", "BEAR")
     if bear is None:
         return None
     time.sleep(2)
 
     bull_prompt = BULL_PROMPT_TEMPLATE.format(data_block=data_block)
-    bull = _call_gemini_json(bull_prompt, f"{ticker}-BULL")
+    bull = _call_agent_json(bull_prompt, f"{ticker}-BULL", "BULL")
     if bull is None:
         return None
     time.sleep(2)
@@ -1795,7 +2012,7 @@ def analyze_with_gemini(candidate, prev_snapshot=None):
         bull_fv_evidence="; ".join(bull.get("bull_fv_evidence", []) or []) or "N/A",
         bull_fv=bull.get("bull_fv", "N/A"),
     )
-    cro = _call_gemini_json(cro_prompt, f"{ticker}-CRO")
+    cro = _call_agent_json(cro_prompt, f"{ticker}-CRO", "CRO")
     if cro is None:
         return None
 
@@ -1809,6 +2026,11 @@ def analyze_with_gemini(candidate, prev_snapshot=None):
     cro["_bear_case"] = bear.get("bear_case")
     cro["_bull_case"] = bull.get("bull_case")
     cro["_value_trap_risk"] = bear.get("value_trap_risk")
+    cro["llm_trace"] = {
+        "bear": {"provider": bear.get("_llm_provider"), "model": bear.get("_llm_model")},
+        "bull": {"provider": bull.get("_llm_provider"), "model": bull.get("_llm_model")},
+        "cro": {"provider": cro.get("_llm_provider"), "model": cro.get("_llm_model")},
+    }
     return cro
 
 
@@ -2624,7 +2846,7 @@ def round2_deep_analysis(candidates_df, last_seen_map=None, active_cases=None):
 
         print(f"  Derin analiz {i}/{len(records)}: {ticker} (Bear -> Bull -> CRO) | tetik={reason}")
         full_reanalysis_used += 1
-        result = analyze_with_gemini(candidate, (last_seen_map or {}).get(ticker))
+        result = analyze_with_multi_llm(candidate, (last_seen_map or {}).get(ticker))
         if result:
             # Data Confidence LLM'in tek başına 100 vermesine bırakılmıyor.
             try:
@@ -2657,7 +2879,7 @@ def round2_deep_analysis(candidates_df, last_seen_map=None, active_cases=None):
             save_thesis_cache(thesis_cache)  # her başarılı tam analiz sonrası güvenli checkpoint
             results.append(result)
             reanalyzed_count += 1
-            time.sleep(SLEEP_BETWEEN_GEMINI_CALLS)
+            time.sleep(0.5)
         else:
             # Yeni analiz başarısız olduysa ve eski bir tez varsa taramayı çöpe atma;
             # stale tezi açıkça işaretleyerek kullan. Yeni adayda cache yoksa atla.
@@ -2666,11 +2888,11 @@ def round2_deep_analysis(candidates_df, last_seen_map=None, active_cases=None):
                 result["thesis_reused"] = True
                 result["thesis_stale_fallback"] = True
                 result["thesis_reanalysis_reason"] = reason
-                print(f"  [TEZ-FALLBACK {ticker}] Gemini başarısız; son geçerli tez kullanıldı")
+                print(f"  [TEZ-FALLBACK {ticker}] LLM zinciri başarısız; son geçerli tez kullanıldı")
                 results.append(result)
                 reused_count += 1
             else:
-                print(f"  [TEZ-ATLANDI {ticker}] yeni aday için Gemini sonucu yok; bu turda finale alınmadı")
+                print(f"  [TEZ-ATLANDI {ticker}] yeni aday için LLM sonucu yok; bu turda finale alınmadı")
                 failed_count += 1
 
     save_report_cache(report_cache)
@@ -3546,6 +3768,14 @@ def main():
     candidates_df = augment_candidates_with_active_cases(candidates_df, active_cases)
 
     print(f"Round 2: {len(candidates_df)} aday için Persistent Multi-Agent analiz başlıyor...")
+    _groq_models_healthcheck()
+    _gemini_models_healthcheck()
+    print(
+        f"[LLM-ROUTER] BEAR=Groq({GROQ_MODEL_CANDIDATES[0]}) | "
+        f"BULL=Groq({GROQ_MODEL_CANDIDATES[0]}) | "
+        f"CRO=Gemini({GEMINI_MODEL_CANDIDATES[0]}) | "
+        f"Gemini backup={'ON' if backup_client is not None else 'OFF'} | Telegram health messages=OFF"
+    )
     if "cap_bucket" in candidates_df.columns:
         cap_counts = candidates_df["cap_bucket"].value_counts().to_dict()
         print("[ÖLÇEK-DAĞILIMI ROUND2] " + " | ".join(
@@ -3667,6 +3897,7 @@ def main():
         }
         for r in ranked[:15]
     ])
+    _print_llm_health_summary()
     print("Tamamlandı.")
 
 
