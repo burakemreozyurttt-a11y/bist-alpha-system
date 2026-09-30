@@ -992,30 +992,82 @@
       }
     },
     "ZGYO": {
-      "analyzed_at": "2026-09-22",
-      "analysis_price": 16.3,
+      "analyzed_at": "2026-09-30",
+      "analysis_price": 17.93,
       "input_fingerprint": "99f9b7055b77a5dbca7acac493a6fc14940623035630ec8583de01c5a77ec4bf",
       "cache_version": "PERSISTENT_MULTI_AGENT_V2_MULTI_PROVIDER",
-      "legacy_seed": true,
       "result": {
-        "ticker": "ZGYO",
-        "name": "ZGYO",
-        "price": 16.3,
-        "alpha_score": 45.0,
-        "data_confidence": 0,
-        "bear_fv": 5.5,
+        "alpha_score": 15,
+        "data_confidence": 85,
+        "bear_fv": 12.5,
         "base_fv": 10.0,
-        "bull_fv": 18.0,
+        "bull_fv": null,
         "base_revision_status": "UNCHANGED",
-        "base_revision_evidence": [],
+        "base_revision_evidence": [
+          "Önceki analize kıyasla operasyonel marjlardaki çöküş ve negatif nakit akışı Base FV artışına izin vermemektedir."
+        ],
         "upside_case_status": "UNSUPPORTED",
         "upside_evidence": [],
-        "verdict": "WATCH",
-        "thesis_summary": "Önceki geçerli fundamental tez korunuyor; V5.20 geçişinde bağımsız Bear, Bull ve CRO yeniden doğrulaması sıraya alınmıştır.",
-        "catalysts": [],
-        "risks": [],
-        "thesis_reused": true,
-        "thesis_legacy_seed": true
+        "thesis_summary": "Düşük çarpanlar ve yüksek özsermaye kârlılığı görünürde cazip bir tablo sunsa da esas faaliyet marjındaki sert çöküş kârlılığın kalitesini gölgelemektedir. Nakit akışının negatif seyretmesi ve güncel fiyatın temel değerin oldukça üzerine çıkması hisse üzerindeki risk primini artırmaktadır.",
+        "catalysts": [
+          "Çeyreklik kâr büyüme ivmesinin pozitif alana geçmesi kısa vadeli net kâr dinamiklerini destekleyen ana unsurdur.",
+          "Özsermaye kârlılığının yüksek seviyesini koruması ve düşük borçluluk bilançonun finansal esnekliğini muhafaza etmektedir."
+        ],
+        "risks": [
+          "Faaliyet marjlarında yaşanan dramatik gerileme şirketin ana operasyonlarından kâr üretme yeteneğini ciddi şekilde zayıflatmaktadır.",
+          "İşletme nakit akışının net kârı karşılayamaması kâğıt üzerindeki kârın nakde dönüşmediğini ve değer tuzağı riskini doğrulamaktadır."
+        ],
+        "verdict": "WEAKENING",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.6-flash",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "önceki state'te fundamental baz çizgisi yok; V5.12 geçiş kaydı"
+        ],
+        "ticker": "ZGYO",
+        "name": "ZGYO",
+        "price": 17.93,
+        "_bear_case": "Şirketin 1.49 gibi son derece düşük bir F/K oranına sahip olması, operasyonel kârlılıktaki dramatik çöküşü ve nakit yaratamama sorununu gizleyen klasik bir değer tuzağı (value trap) görüntüsü sergilemektedir. İşletme nakit akışı oranının negatif kalması ve faaliyet marjlarındaki devasa erime, mevcut kârların sürdürülemez olduğunu ve hisse fiyatındaki düşüş trendinin haklı temellere dayandığını göstermektedir.",
+        "_bull_case": "Şirket, 1.49 gibi oldukça cazip bir Trailing F/K oranı ve %61.27 gibi güçlü bir özsermaye kârlılığı ile işlem görmektedir. Ayrıca, çeyreklik kâr büyümesi ivmesindeki %304.39'luk devasa artış, operasyonel toparlanmanın kârlılığa hızla yansıdığını göstermektedir.",
+        "_value_trap_risk": 85,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.6-flash"
+          }
+        },
+        "data_confidence_raw": 85,
+        "low_liquidity_flag": false,
+        "screening_score": 69.3,
+        "cap_bucket": "Orta",
+        "score_valuation": 0.8147286821705426,
+        "score_momentum": 0.6293980371057033,
+        "score_acceleration": 0.8480818197250042,
+        "score_margin": 0.14339194296456753,
+        "score_balance": 0.7097750865051903,
+        "score_divergence": 0.8339100346020761,
+        "cfo_to_net_income": -0.25,
+        "roe": 0.6127,
+        "revenue_growth": 0.0938,
+        "earnings_growth": 0.105,
+        "revenue_acceleration": 0.108,
+        "earnings_acceleration": 3.0439,
+        "gross_margin_trend": -0.0546,
+        "operating_margin_trend": -70.9436,
+        "net_debt_to_equity": 0.04,
+        "debt_to_equity": 0.43,
+        "_return_20d": -0.25104427736006685,
+        "_return_60d": -0.5256613756613756,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "LEGACY_BOOTSTRAP_REVIEW"
       }
     },
     "ARMGD": {
@@ -1171,30 +1223,80 @@
       }
     },
     "TGSAS": {
-      "analyzed_at": "2026-09-22",
-      "analysis_price": 96.3,
+      "analyzed_at": "2026-09-30",
+      "analysis_price": 86.7,
       "input_fingerprint": "fa7e80cbc80c705d08792a9b1b81b2d42c58edc64744a67a9bfface0950e7c8a",
       "cache_version": "PERSISTENT_MULTI_AGENT_V2_MULTI_PROVIDER",
-      "legacy_seed": true,
       "result": {
-        "ticker": "TGSAS",
-        "name": "TGSAS",
-        "price": 96.3,
-        "alpha_score": 38.0,
-        "data_confidence": 0,
-        "bear_fv": 65.0,
+        "alpha_score": 30,
+        "data_confidence": 55,
+        "bear_fv": 45.0,
         "base_fv": 98.0,
-        "bull_fv": 145.0,
+        "bull_fv": null,
         "base_revision_status": "UNCHANGED",
         "base_revision_evidence": [],
         "upside_case_status": "UNSUPPORTED",
         "upside_evidence": [],
-        "verdict": "WEAKENING",
-        "thesis_summary": "Önceki geçerli fundamental tez korunuyor; V5.20 geçişinde bağımsız Bear, Bull ve CRO yeniden doğrulaması sıraya alınmıştır.",
-        "catalysts": [],
-        "risks": [],
-        "thesis_reused": true,
-        "thesis_legacy_seed": true
+        "thesis_summary": "Operasyonel marjlardaki genişleme ve ivmelenen ciro büyümesi olumlu bir tablo sunsa da, işletme nakit akışının negatif seyretmesi kâr kalitesini ciddi biçimde zedelemektedir. Hisse fiyatındaki sert geri çekilme değerleme fırsatı izlenimi verse de nakit üretimindeki tıkanıklık çözülmeden temkinli duruş korunmalıdır.",
+        "catalysts": [
+          "Faaliyet marjının %43.34 artması, operasyonel verimliliğin güçlü seyrettiğini ve ana faaliyet kârlılığının korunduğunu göstermektedir.",
+          "Ciro büyüme ivmesinin %37.07 artması ve negatif net finansal borç, şirketin satış hacmi ile finansal esnekliğini desteklemektedir."
+        ],
+        "risks": [
+          "İşletme nakit akışının net kâra oranının -1.93 olması, elde edilen kârın nakde dönüşmediğini ve nakit akış krizine işaret etmektedir.",
+          "Son 20 günde yaşanan %62.73'lük sert fiyat düşüşü, piyasanın şirketteki kâr kalitesi sorununu ve değer tuzağı riskini fiyatladığını gösterir."
+        ],
+        "verdict": "WATCH",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.6-flash",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "önceki state'te fundamental baz çizgisi yok; V5.12 geçiş kaydı"
+        ],
+        "ticker": "TGSAS",
+        "name": "TGSAS",
+        "price": 86.7,
+        "_bear_case": "Şirket, %13.12 gibi enflasyonun çok altında kalan düşük özsermaye kârlılığı ile sermaye erimesi yaşamaktadır. İşletme nakit akışının net kâra oranının -1.93 gibi son derece olumsuz bir seviyede gerçekleşmesi, kârların nakde dönüşmediğini ve finansal yapının ciddi baskı altında olduğunu göstermektedir.",
+        "_bull_case": "TGSAS, %43.34'lük güçlü faaliyet marjı artışı ve negatif net finansal borç pozisyonu ile operasyonel kârlılığını korumaktadır. Şirketin ciro büyüme ivmesindeki %37.07'lik artış ve aşırı fiyat düşüşü sonrası oluşan yüksek divergence skoru, temkinli bir toparlanma potansiyeli sunmaktadır. Ancak nakit akışı kalitesindeki zayıflık nedeniyle somut bir hedef fiyat üretmek için erken olup, senaryo mevcut rasyonel verilerle sınırlandırılmıştır.",
+        "_value_trap_risk": 85,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.6-flash"
+          }
+        },
+        "data_confidence_raw": 55,
+        "low_liquidity_flag": false,
+        "screening_score": 68.5,
+        "cap_bucket": "Küçük",
+        "score_valuation": 0.5,
+        "score_momentum": 0.611190053285968,
+        "score_acceleration": 0.6547445255474453,
+        "score_margin": 0.7407320674693779,
+        "score_balance": 0.7614046963635662,
+        "score_divergence": 0.9740484429065744,
+        "cfo_to_net_income": -1.93,
+        "roe": 0.1312,
+        "revenue_growth": 0.2341,
+        "earnings_growth": null,
+        "revenue_acceleration": 0.3707,
+        "earnings_acceleration": null,
+        "gross_margin_trend": 0.0,
+        "operating_margin_trend": 0.4334,
+        "net_debt_to_equity": -0.06,
+        "debt_to_equity": 42.21,
+        "_return_20d": -0.6272570937231299,
+        "_return_60d": -0.5176175313479057,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "LEGACY_BOOTSTRAP_REVIEW"
       }
     },
     "VANGD": {
@@ -1278,30 +1380,80 @@
       }
     },
     "METRO": {
-      "analyzed_at": "2026-09-22",
-      "analysis_price": 6.88,
+      "analyzed_at": "2026-09-30",
+      "analysis_price": 6.61,
       "input_fingerprint": "437fd5a75fe321f1a872602c60aceb21a9e0b807e8bd427a67667111f99e8495",
       "cache_version": "PERSISTENT_MULTI_AGENT_V2_MULTI_PROVIDER",
-      "legacy_seed": true,
       "result": {
-        "ticker": "METRO",
-        "name": "METRO",
-        "price": 6.88,
-        "alpha_score": 45.0,
-        "data_confidence": 0,
-        "bear_fv": 3.5,
+        "alpha_score": 25,
+        "data_confidence": 65,
+        "bear_fv": 4.5,
         "base_fv": 5.2,
-        "bull_fv": 9.5,
+        "bull_fv": null,
         "base_revision_status": "UNCHANGED",
         "base_revision_evidence": [],
         "upside_case_status": "UNSUPPORTED",
         "upside_evidence": [],
-        "verdict": "WATCH",
-        "thesis_summary": "Önceki geçerli fundamental tez korunuyor; V5.20 geçişinde bağımsız Bear, Bull ve CRO yeniden doğrulaması sıraya alınmıştır.",
-        "catalysts": [],
-        "risks": [],
-        "thesis_reused": true,
-        "thesis_legacy_seed": true
+        "thesis_summary": "Şirketin sıfır borçlu yapısı ve cazip görünüşlü çarpanları öne çıksa da kâr nakde dönüşmediği için finansal kalite zayıf seyretmektedir. Güncel fiyatın temel makul değerin üzerinde seyretmesi ve veri eksikliği nedeniyle hisse üzerindeki değer tuzağı riskinin takip edilmesi gerekmektedir.",
+        "catalysts": [
+          "Şirketin sıfır net finansal borçlu yapısı, faiz yükü olmaksızın olası operasyonel dalgalanmalarda bilanço esnekliği sağlamaktadır.",
+          "Düşük çarpanlar ve yüksek özsermaye kârlılığı, operasyonel nakit akışının iyileşmesi durumunda çarpan genişlemesi potansiyeli sunar."
+        ],
+        "risks": [
+          "İşletme nakit akışının net kâra oranının %2 gibi kritik seviyede olması, açıklanan kârın nakde dönüşmediğini ve kalite sorunu taşıdığını gösterir.",
+          "Ciro ve brüt marj detaylarının eksikliği, şirket kârlılığındaki yüksek artışın sürdürülebilirliğini nicel olarak doğrulamayı engellemektedir."
+        ],
+        "verdict": "WEAKENING",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.6-flash",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "önceki state'te fundamental baz çizgisi yok; V5.12 geçiş kaydı"
+        ],
+        "ticker": "METRO",
+        "name": "METRO",
+        "price": 6.61,
+        "_bear_case": "METRO hissesi, 3.31 F/K oranı ve 0.66 PD/DD ile ucuz görünse de, %512.24 net kâr artışına rağmen işletme nakit akışı oranının 0.02 gibi felaket bir seviyede kalması kâğıt üstünde kalan hayali kazançlara işaret eder. 60 günlük %25.48'lik sert fiyat düşüşü de piyasanın bu yanıltıcı kâr kalitesini bir değer tuzağı olarak fiyatladığını açıkça göstermektedir.",
+        "_bull_case": "METRO, 3.31 F/K ve 0.66 PD/DD gibi cazip değerleme çarpanları ile işlem görürken sıfır net borç yapısıyla dikkat çekmektedir. Net kârındaki %512.24 oranındaki güçlü yıllık artış, şirketin operasyonel kârlılığını artırma potansiyelini desteklemektedir.",
+        "_value_trap_risk": 85,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.6-flash"
+          }
+        },
+        "data_confidence_raw": 65,
+        "low_liquidity_flag": false,
+        "screening_score": 67.2,
+        "cap_bucket": "Orta",
+        "score_valuation": 0.7875860573534993,
+        "score_momentum": 0.7846715328467153,
+        "score_acceleration": 0.5,
+        "score_margin": 0.5,
+        "score_balance": 0.7307818589933239,
+        "score_divergence": 0.5570934256055363,
+        "cfo_to_net_income": 0.02,
+        "roe": 0.2007,
+        "revenue_growth": null,
+        "earnings_growth": 5.1224,
+        "revenue_acceleration": null,
+        "earnings_acceleration": null,
+        "gross_margin_trend": null,
+        "operating_margin_trend": null,
+        "net_debt_to_equity": -0.0,
+        "debt_to_equity": 0.0,
+        "_return_20d": -0.2140309155766944,
+        "_return_60d": -0.25479143179255903,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "LEGACY_BOOTSTRAP_REVIEW"
       }
     },
     "TEHOL": {
@@ -1382,30 +1534,80 @@
       }
     },
     "ISDMR": {
-      "analyzed_at": "2026-09-23",
+      "analyzed_at": "2026-09-30",
       "analysis_price": 62.35,
       "input_fingerprint": "47cfdb389aa68bf9621e70e395434a01921844bf9d1cda14d3d32e80a90eb2fc",
       "cache_version": "PERSISTENT_MULTI_AGENT_V2_MULTI_PROVIDER",
-      "legacy_seed": true,
       "result": {
-        "ticker": "ISDMR",
-        "name": "ISDMR",
-        "price": 62.35,
-        "alpha_score": 62.0,
-        "data_confidence": 0,
-        "bear_fv": 45.0,
+        "alpha_score": 38,
+        "data_confidence": 85,
+        "bear_fv": 48.5,
         "base_fv": 62.0,
-        "bull_fv": 75.0,
+        "bull_fv": null,
         "base_revision_status": "UNCHANGED",
         "base_revision_evidence": [],
         "upside_case_status": "UNSUPPORTED",
         "upside_evidence": [],
+        "thesis_summary": "Net kâr ivmelenmesi ve borçsuz bilanço yapısı şirketin operasyonel direncini desteklese de mevcut hisse fiyatı adil değer seviyesine ulaşmıştır. Marjlardaki daralma ve nakit akış kalitesindeki zayıflık, temel hikayede yeni bir yukarı yönlü revizyonu engellemektedir.",
+        "catalysts": [
+          "Net kârın yıllık %203,50 artarak ivmelenmesi, şirketin dönemsel kârlılık gücünün kısa vadede yüksek seyrettiğini göstermektedir.",
+          "Net finansal borcun özkaynağa oranının -%0,02 olması, bilançonun faiz ve likidite risklerine karşı tam korumalı olduğunu kanıtlar."
+        ],
+        "risks": [
+          "Faaliyet kâr marjının yıllık 1,74 puan gerilemesi, maliyet baskılarının operasyonel kârlılık üzerinde eritici etki yaptığını gösterir.",
+          "İşletme nakit akışının net kâra oranının 0,81 seviyesinde kalması, muhasebeleştirilen kârın nakde dönüşüm kalitesinin zayıf olduğuna işaret eder."
+        ],
         "verdict": "WATCH",
-        "thesis_summary": "Önceki geçerli fundamental tez korunuyor; V5.20 geçişinde bağımsız Bear, Bull ve CRO yeniden doğrulaması sıraya alınmıştır.",
-        "catalysts": [],
-        "risks": [],
-        "thesis_reused": true,
-        "thesis_legacy_seed": true
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.6-flash",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "önceki state'te fundamental baz çizgisi yok; V5.12 geçiş kaydı"
+        ],
+        "ticker": "ISDMR",
+        "name": "ISDMR",
+        "price": 62.35,
+        "_bear_case": "ISDMR, %11.83 gibi zayıf bir özsermaye kârlılığıyla çalışırken brüt ve faaliyet marjlarındaki daralma baskısı altındadır. İşletme nakit akışının net kârın gerisinde kalması ve döngüsel zirve ihtimali, hisseyi cazip görünen fakat orta vadede değer yaratamayacak tipik bir değer tuzağına dönüştürmektedir.",
+        "_bull_case": "Net kâr büyümesindeki %203.50'lik güçlü artış ve çeyreklik bazda %237.35'e ulaşan ivmelenme, operasyonel kârlılığın hızla toparlandığını göstermektedir. Negatif net finansal borç/özsermaye oranı (-0.02) ve 0.58 gibi düşük borçluluk seviyesi, şirketin bilanço direncini artırarak olası büyüme hamlelerini finanse etme esnekliği sağlamaktadır.",
+        "_value_trap_risk": 75,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.6-flash"
+          }
+        },
+        "data_confidence_raw": 100,
+        "low_liquidity_flag": false,
+        "screening_score": 62.4,
+        "cap_bucket": "Büyük",
+        "score_valuation": 0.46205887136119694,
+        "score_momentum": 0.8361437035692524,
+        "score_acceleration": 0.808903411984383,
+        "score_margin": 0.4860598846021245,
+        "score_balance": 0.7667255695193013,
+        "score_divergence": 0.2491349480968858,
+        "cfo_to_net_income": 0.81,
+        "roe": 0.1183,
+        "revenue_growth": 0.2193,
+        "earnings_growth": 2.035,
+        "revenue_acceleration": 0.082,
+        "earnings_acceleration": 2.3735,
+        "gross_margin_trend": -0.005,
+        "operating_margin_trend": -0.0174,
+        "net_debt_to_equity": -0.02,
+        "debt_to_equity": 0.58,
+        "_return_20d": 0.16433239962651736,
+        "_return_60d": 0.09867841409691636,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "LEGACY_BOOTSTRAP_REVIEW"
       }
     },
     "EDATA": {
@@ -1481,6 +1683,241 @@
         "debt_to_equity": 0.58,
         "_return_20d": -0.6657366071428572,
         "_return_60d": -0.6832363828662084,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "NEW_CANDIDATE"
+      }
+    },
+    "CVKMD": {
+      "analyzed_at": "2026-09-30",
+      "analysis_price": 12.77,
+      "input_fingerprint": "30c11393134af32015f2ce196b46910294b72171c7c5fcdf319aeaea4f84ba60",
+      "cache_version": "PERSISTENT_MULTI_AGENT_V2_MULTI_PROVIDER",
+      "result": {
+        "alpha_score": 58,
+        "data_confidence": 80,
+        "bear_fv": 9.5,
+        "base_fv": 15.2,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [
+          "İlk değerleme analizi yapılmaktadır; nakit akışı zayıflığı nedeniyle muhafazakar taban fiyat belirlenmiştir."
+        ],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "thesis_summary": "CVKMD, ivmelenen ciro ve kâr büyümesiyle öne çıkarken düşük çarpanlarıyla cazip görünmektedir. Ancak işletme nakit akışının negatif seyretmesi kâr kalitesine dair ciddi soru işaretleri yaratmaktadır. Mevcut fiyat düşüşü fırsat sunsa da nakit dönüşümü düzelmeden risk profili yüksek kalmaya devam etmektedir.",
+        "catalysts": [
+          "Çeyreklik ciro büyüme ivmesinin %93.19 seviyesine ulaşması, şirketin operasyonel ölçeğini hızla genişlettiğini göstermektedir.",
+          "Net kâr büyüme ivmesinin %142.62 oranında artması, operasyonel verimliliğin net kârlılık rakamlarına olumlu yansıdığına işaret eder."
+        ],
+        "risks": [
+          "İşletme nakit akışının net kâra oranının -1.24 seviyesinde kalması, şirketin kârı nakde dönüştürmekte ciddi bir kriz yaşadığını gösterir.",
+          "Faaliyet marjının %2.15 daralması, satış büyümesine rağmen yükselen maliyet baskısının operasyonel kârlılığı kemirdiğini ortaya koymaktadır."
+        ],
+        "verdict": "WATCH",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.6-flash",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "ilk değerleme"
+        ],
+        "ticker": "CVKMD",
+        "name": "CVKMD",
+        "price": 12.77,
+        "_bear_case": "CVKMD, düşük F/K oranına rağmen kâr kalitesindeki ciddi bozulma ve negatif nakit akışlarıyla tipik bir değer tuzağı sinyali vermektedir. Faaliyet marjındaki daralma ve zayıflayan bilanço yapısı, mevcut ucuzluğun kalıcı bir risk barındırdığını ve hisse fiyatındaki düşüş trendinin derinleşebileceğini göstermektedir.",
+        "_bull_case": "CVKMD, çeyreklik bazda ciro büyüme ivmesindeki %93.19 ve kâr büyüme ivmesindeki %142.62 oranındaki güçlü hızlanma ile dikkat çekmektedir. 6.38 F/K ve 0.75 PD/DD gibi cazip değerleme çarpanları, son dönemdeki %20.98'lik 20 günlük fiyat düşüşüyle birleşerek rasyonel bir toparlanma potansiyeli sunmaktadır.",
+        "_value_trap_risk": 75,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.6-flash"
+          }
+        },
+        "data_confidence_raw": 80,
+        "low_liquidity_flag": false,
+        "screening_score": 67.0,
+        "cap_bucket": "Orta",
+        "score_valuation": 0.6821000704721635,
+        "score_momentum": 0.7113365572856569,
+        "score_acceleration": 0.8968935664573077,
+        "score_margin": 0.6248690878103675,
+        "score_balance": 0.4532252929599568,
+        "score_divergence": 0.6055363321799307,
+        "cfo_to_net_income": -1.24,
+        "roe": 0.1173,
+        "revenue_growth": 0.3,
+        "earnings_growth": 0.1409,
+        "revenue_acceleration": 0.9319,
+        "earnings_acceleration": 1.4262,
+        "gross_margin_trend": 0.0542,
+        "operating_margin_trend": -0.0215,
+        "net_debt_to_equity": 0.3,
+        "debt_to_equity": 1.1,
+        "_return_20d": -0.2097772277227723,
+        "_return_60d": -0.16949571415564324,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "NEW_CANDIDATE"
+      }
+    },
+    "BESTE": {
+      "analyzed_at": "2026-09-30",
+      "analysis_price": 18.99,
+      "input_fingerprint": "9601b59c1f42a30e8fb4661690e084887a733ed3796ce8185f1ffc524570e777",
+      "cache_version": "PERSISTENT_MULTI_AGENT_V2_MULTI_PROVIDER",
+      "result": {
+        "alpha_score": 42,
+        "data_confidence": 85,
+        "bear_fv": 10.5,
+        "base_fv": 15.0,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "thesis_summary": "Şirket düşük F/K ve PD/DD oranlarıyla iskontolu görünse de, ciro daralması ve zayıf nakit dönüşümü ciddi bir değer tuzağı riski barındırmaktadır. Operasyonel ivme henüz nakit akışına yansımadığı için mevcut fiyat seviyeleri ihtiyatla izlenmeyi gerektirmektedir.",
+        "catalysts": [
+          "Çeyreklik net kâr büyüme ivmesinin %408.75 oranına ulaşması, operasyonel verimlilik artışlarının kârlılığa olumlu yansıdığını göstermektedir.",
+          "0.13 seviyesindeki düşük borçluluk oranı, şirketin bilançosunu koruyarak finansal risklerden büyük ölçüde arınmış olmasını sağlamaktadır."
+        ],
+        "risks": [
+          "Ciro büyümesinin %-16.57 oranında daralması, şirketin operasyonel ölçek kaybetmeye başladığını ve talep yaratmada zorlandığını kanıtlamaktadır.",
+          "İşletme nakit akışının net kâra oranının 0.16 seviyesinde kalması, kâğıt üzerindeki kârların kasaya nakit olarak giremediğini göstermektedir."
+        ],
+        "verdict": "WATCH",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.5-flash-lite",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "ilk değerleme"
+        ],
+        "ticker": "BESTE",
+        "name": "BESTE",
+        "price": 18.99,
+        "_bear_case": "Şirket, düşük F/K oranına rağmen cirodaki %16.57'lik daralma ve brüt marzdaki %33.77'lik sert düşüşle klasik bir değer tuzağı sinyali vermektedir. İşletme nakit akışı net kârın yalnızca %16'sını oluşturduğu için kârlar nakde dönüşmemekte ve son 20 gündeki %40.66'lık fiyat düşüşü piyasanın bu çöküşü fiyatladığını göstermektedir.",
+        "_bull_case": "BESTE, 4.75 F/K ve 0.55 PD/DD çarpanlarıyla tarihi dip seviyelerde işlem görürken, %408.75'lik çeyreklik kâr büyümesi ivmesiyle operasyonel toparlanma sinyali vermektedir. Düşük borçluluk oranı (0.13 Borç/Özsermaye) şirketin bilançosunu korumasını sağlarken, son dönemdeki sert fiyat düşüşleri (60 günlük %-42.77) aşırı satım bölgesinde güçlü bir değer fırsatı yaratmaktadır.",
+        "_value_trap_risk": 75,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          }
+        },
+        "data_confidence_raw": 100,
+        "low_liquidity_flag": false,
+        "screening_score": 67.0,
+        "cap_bucket": "Orta",
+        "score_valuation": 0.7916842847075405,
+        "score_momentum": 0.5797980059898096,
+        "score_acceleration": 0.8519775929383806,
+        "score_margin": 0.12394375817184787,
+        "score_balance": 0.6431660899653979,
+        "score_divergence": 0.8667820069204152,
+        "cfo_to_net_income": 0.16,
+        "roe": 0.116,
+        "revenue_growth": -0.1657,
+        "earnings_growth": 0.9623,
+        "revenue_acceleration": 0.0961,
+        "earnings_acceleration": 4.0875,
+        "gross_margin_trend": -0.3377,
+        "operating_margin_trend": -0.2019,
+        "net_debt_to_equity": 0.04,
+        "debt_to_equity": 0.13,
+        "_return_20d": -0.40656250000000005,
+        "_return_60d": -0.42766726943942135,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "NEW_CANDIDATE"
+      }
+    },
+    "ASGYO": {
+      "analyzed_at": "2026-09-30",
+      "analysis_price": 9.95,
+      "input_fingerprint": "68a24d7c7f5897d04aed5ad42b4f2929f9afbdfd218b983498061c7470eb2461",
+      "cache_version": "PERSISTENT_MULTI_AGENT_V2_MULTI_PROVIDER",
+      "result": {
+        "alpha_score": 58,
+        "data_confidence": 71,
+        "bear_fv": 6.5,
+        "base_fv": 13.5,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [
+          "Şirket bilançosunda yapılan ilk değerlemede yüksek varlık iskontosu ile nakit akış kalitesi zafiyeti birlikte dikkate alınmıştır."
+        ],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "thesis_summary": "ASGYO, 0.23 PD/DD çarpanı ile yüksek varlık iskontosu sunarken net nakit pozisyonuyla direnç göstermektedir. Buna karşın operasyonel kârın nakde dönüşmemesi belirgin bir değer tuzağı riski yaratmaktadır. Hisse varlık bazında potansiyel taşısa da nakit akışı güçlenene kadar iskonto korunabilir.",
+        "catalysts": [
+          "Şirketin faaliyet marjında gerçekleşen %56.75'lik güçlü genişleme, operasyonel verimlilik artışının esas kârlılığı desteklediğini göstermektedir.",
+          "Net finansal borcun özsermayeye oranının %-3 seviyesinde bulunması, olumsuz piyasa koşullarında şirketin bilanço direncini korumasını sağlar."
+        ],
+        "risks": [
+          "İşletme nakit akışının net kâra oranının -0.13 ile negatif kalması, kâğıt üzerindeki kârlılığın kasaya nakit girmeden oluştuğunu gösterir.",
+          "Hissenin son 60 günde %19.89 değer kaybetmesi, piyasanın zayıf nakit üretimi nedeniyle varlık iskontosunu fiyatlamakta çekimser kaldığını gösterir."
+        ],
+        "verdict": "WATCH",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.6-flash",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "önceki state'te fundamental baz çizgisi yok; V5.12 geçiş kaydı"
+        ],
+        "ticker": "ASGYO",
+        "name": "ASGYO",
+        "price": 9.95,
+        "_bear_case": "ASGYO, 0.23 gibi aşırı düşük görünen PD/DD oranına rağmen kârın nakde dönüşememesi nedeniyle ciddi bir değer tuzağı barındırmaktadır. İşletme nakit akışı oranının -0.13 seviyesinde gerçekleşmesi, kâğıt üzerindeki kârlılığın gerçek nakit akışıyla desteklenmediğini ve operasyonel risklerin göz ardı edildiğini göstermektedir.",
+        "_bull_case": "ASGYO, 0.23 gibi oldukça düşük bir PD/DD çarpanı ile işlem görürken, faaliyet marjlarındaki %56.75'lik güçlü artış ve sıfıra yakın borçluluk yapısıyla dikkat çekmektedir. Şirketin çeyreklik ciro büyümesi ivmesindeki %93.65'lik hızlanma, operasyonel verimliliğin artarak devam edeceğini ve bilançodaki varlık kalitesinin uzun vadede adil değere yansıyacağını göstermektedir.",
+        "_value_trap_risk": 78,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.6-flash"
+          }
+        },
+        "data_confidence_raw": 71,
+        "low_liquidity_flag": false,
+        "screening_score": 66.8,
+        "cap_bucket": "Orta",
+        "score_valuation": 0.6767441860465117,
+        "score_momentum": 0.6566607460035524,
+        "score_acceleration": 0.6883211678832117,
+        "score_margin": 0.851015423244801,
+        "score_balance": 0.7512983818062541,
+        "score_divergence": 0.44982698961937717,
+        "cfo_to_net_income": -0.13,
+        "roe": 0.3262,
+        "revenue_growth": 0.4224,
+        "earnings_growth": null,
+        "revenue_acceleration": 0.9365,
+        "earnings_acceleration": null,
+        "gross_margin_trend": 0.0453,
+        "operating_margin_trend": 0.5675,
+        "net_debt_to_equity": -0.03,
+        "debt_to_equity": 0.09,
+        "_return_20d": -0.091324200913242,
+        "_return_60d": -0.19887278582930767,
         "thesis_reused": false,
         "thesis_reanalysis_reason": "NEW_CANDIDATE"
       }
