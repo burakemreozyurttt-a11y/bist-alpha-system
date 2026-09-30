@@ -32,10 +32,10 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-# scanner.py'deki ile aynı yedekleme zinciri
+# V5.22: Haftalık metin kritik CRO kotasını tüketmesin.
+# Haftalık özet yalnızca geniş kotası olan Flash-Lite'ı kullanır; gerekirse Groq fallback.
 MODEL_CANDIDATES = [
     "gemini-3.5-flash-lite",
-    "gemini-3.6-flash",
 ]
 GROQ_MODEL = "openai/gpt-oss-120b"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
