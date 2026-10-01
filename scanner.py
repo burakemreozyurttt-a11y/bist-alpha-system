@@ -134,6 +134,7 @@ GROQ_MODEL_CANDIDATES = [
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
 MAX_LLM_RETRIES_PER_TARGET = 1
+GEMINI_503_CIRCUIT_BREAKER_THRESHOLD = 2  # Aynı model bir run içinde 2 ayrı çağrıda 503 ile biterse o run için kapatılır.
 
 _llm_health = {
     "gemini": {
@@ -141,6 +142,7 @@ _llm_health = {
         "quota_exhausted_models": set(),
         "requests": 0, "success": 0, "fail": 0,
         "requests_by_model": {}, "success_by_model": {}, "fail_by_model": {},
+        "service_unavailable_by_model": {},
         "last_call_ts": {},
     },
     "groq": {"disabled_models": set(), "requests": 0, "success": 0, "fail": 0, "remaining_requests": None, "remaining_tokens": None},
@@ -1803,6 +1805,7 @@ def _print_llm_health_summary():
         f"Gemini total req={gm['requests']} ok={gm['success']} fail={gm['fail']} | "
         + " | ".join(per_model)
         + f" | quota_exhausted={sorted(gm.get('quota_exhausted_models', set()))} "
+        + f"| 503_counts={gm.get('service_unavailable_by_model', {})} "
         + f"| Groq fallback req={g['requests']} ok={g['success']} fail={g['fail']} "
         + f"remaining_req={g.get('remaining_requests')} remaining_tok={g.get('remaining_tokens')}"
     )
@@ -1945,7 +1948,16 @@ def _call_gemini_client_json(gclient, client_name, prompt, label, preferred_mode
                         continue
                     _llm_health["gemini"]["fail"] += 1
                     _gemini_model_counter("fail", model_name)
-                    print(f"  [LLM-FAILOVER] {client_name}/{model_name} 503 ({label}); sıradaki model deneniyor")
+                    unavailable = _llm_health["gemini"].setdefault("service_unavailable_by_model", {})
+                    unavailable[model_name] = int(unavailable.get(model_name, 0)) + 1
+                    if unavailable[model_name] >= GEMINI_503_CIRCUIT_BREAKER_THRESHOLD:
+                        _llm_health["gemini"]["disabled_models"].add(model_name)
+                        print(
+                            f"  [LLM-CIRCUIT] {client_name}/{model_name} bu run'da "
+                            f"{unavailable[model_name]} ayrı çağrıda 503 verdi; model run sonuna kadar kapatıldı"
+                        )
+                    else:
+                        print(f"  [LLM-FAILOVER] {client_name}/{model_name} 503 ({label}); sıradaki model deneniyor")
                     break
                 _llm_health["gemini"]["fail"] += 1
                 _gemini_model_counter("fail", model_name)
@@ -2396,14 +2408,41 @@ def compute_anchored_vwap_signal(daily_df, current_price, today):
 
 
 def compute_monthly_open_signal(daily_df, current_price, today):
-    """Fiyat, bu ayın ilk işlem gününün kapanışına göre üstte mi altta mı."""
+    """
+    Fiyatı aylık referansa göre sınıflandırır.
+
+    Normal durumda referans, içinde bulunulan ayın ilk mevcut işlem gününün kapanışıdır.
+    Ayın ilk günü/ilk seansı henüz günlük veri setine düşmemişse sinyalin tüm evrende
+    N/A olmasını engellemek için son geçerli ayın ilk işlem günü referansı geçici olarak
+    taşınır. Güncel aya ait ilk günlük bar oluştuğu anda sistem otomatik olarak yeni aya geçer.
+    """
     if daily_df is None or daily_df.empty or not current_price:
         return None
-    month_start = today.replace(day=1)
-    sub = daily_df[daily_df["date"].dt.date >= month_start]
-    if sub.empty:
+
+    usable = daily_df.dropna(subset=["date", "close"]).copy()
+    usable = usable[usable["close"] > 0].sort_values("date")
+    if usable.empty:
         return None
-    monthly_ref = sub.iloc[0]["close"]
+
+    month_start = today.replace(day=1)
+    current_month = usable[usable["date"].dt.date >= month_start]
+    if not current_month.empty:
+        monthly_ref = current_month.iloc[0]["close"]
+    else:
+        # Güncel ayın ilk günlük barı henüz veri kaynağına düşmediyse son geçerli
+        # ayın ilk işlem gününü referans olarak taşı. Bu yalnızca geçiş günlerinde
+        # continuity sağlar; ilk yeni-ay barıyla otomatik olarak sona erer.
+        prev = usable[usable["date"].dt.date < month_start]
+        if prev.empty:
+            return None
+        last_date = prev.iloc[-1]["date"]
+        last_year = int(last_date.year)
+        last_month = int(last_date.month)
+        prev_month = prev[(prev["date"].dt.year == last_year) & (prev["date"].dt.month == last_month)]
+        if prev_month.empty:
+            return None
+        monthly_ref = prev_month.iloc[0]["close"]
+
     if not monthly_ref or monthly_ref <= 0:
         return None
     return 1.0 if current_price >= monthly_ref else -1.0
