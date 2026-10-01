@@ -95,7 +95,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-# V5.22 — Gemini quota-aware quality router.
+# V5.23 — technical data continuity + cap bucket integrity.
 # Amaç: ücretsiz kotaları modele göre ayırmak, güçlü modeli yalnızca en kritik
 # CRO sentezinde kullanmak ve yüksek hacimli Bear/Bull işini geniş kotası olan
 # Flash-Lite'a vermek. Groq artık ana omurga değil, bağımsız yedek sağlayıcıdır.
@@ -248,7 +248,7 @@ backup_client = genai.Client(api_key=GEMINI_API_KEY_BACKUP) if GEMINI_API_KEY_BA
 # --------------------------------------------------------------------------
 # VERSIONING — istatistiklerde metodoloji değişimini ayırmak için
 # --------------------------------------------------------------------------
-APP_VERSION = "V5.22"
+APP_VERSION = "V5.23"
 SCORING_VERSION = "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3"
 VALUATION_VERSION = "BASE_UPSIDE_DISCIPLINE_V2"
 CASE_ENGINE_VERSION = "CASE_LIFECYCLE_V3"
@@ -536,32 +536,47 @@ def _compute_screening_scores(df):
 CAP_BUCKET_SLOTS = {"Büyük": 8, "Orta": 7, "Küçük": 7}   # toplam = MAX_DEEP_CANDIDATES
 
 
+def _assign_cap_buckets(df):
+    """Tüm Round-1 evrenine piyasa değeri katmanı yazar.
+
+    V5.23: Bu işlem yalnız shortlist kopyasında değil, full scored dataframe'de
+    de yapılır. Böylece aktif case sonradan Round2'ye geri eklendiğinde
+    `cap_bucket` NaN/Bilinmiyor olmaz.
+    """
+    df = df.copy()
+    if "market_cap" not in df.columns:
+        df["cap_bucket"] = "Bilinmiyor"
+        return df
+
+    known_mcap = df[df["market_cap"].notna() & (df["market_cap"] > 0)]
+    if len(known_mcap) < 10:
+        df["cap_bucket"] = "Bilinmiyor"
+        return df
+
+    q1 = known_mcap["market_cap"].quantile(1 / 3)
+    q2 = known_mcap["market_cap"].quantile(2 / 3)
+
+    def bucket_for(mcap):
+        # Piyasa değeri bilinmeyen şirkete yanlışlıkla Küçük etiketi vermiyoruz.
+        # Bu durum görselde açıkça Bilinmiyor olarak gösterilir.
+        if pd.isna(mcap) or mcap <= 0:
+            return "Bilinmiyor"
+        if mcap >= q2:
+            return "Büyük"
+        if mcap >= q1:
+            return "Orta"
+        return "Küçük"
+
+    df["cap_bucket"] = df["market_cap"].apply(bucket_for)
+    return df
+
+
 def _stratified_candidate_selection(df):
     """df zaten screening_score'a göre sıralı. Piyasa değerine göre üç
     katmana ayırıp her katmandan CAP_BUCKET_SLOTS kadar en iyi skorluyu
     seçer. Bir katmanda yeterli şirket yoksa, boşta kalan kontenjan genel
     sıralamadan (katman gözetmeksizin) tamamlanır."""
-    known_mcap = df[df["market_cap"].notna() & (df["market_cap"] > 0)]
-
-    if len(known_mcap) >= 10:
-        q1 = known_mcap["market_cap"].quantile(1 / 3)
-        q2 = known_mcap["market_cap"].quantile(2 / 3)
-
-        def bucket_for(mcap):
-            if pd.isna(mcap) or mcap <= 0:
-                return "Küçük"   # piyasa değeri hesaplanamayanlar genelde çok küçük/veri zayıf şirketler
-            if mcap >= q2:
-                return "Büyük"
-            if mcap >= q1:
-                return "Orta"
-            return "Küçük"
-
-        df = df.copy()
-        df["cap_bucket"] = df["market_cap"].apply(bucket_for)
-    else:
-        # Yeterli piyasa değeri verisi yoksa katmanlama anlamsız, düz sıralamaya dön
-        df = df.copy()
-        df["cap_bucket"] = "Bilinmiyor"
+    df = _assign_cap_buckets(df)
 
     selected_parts = []
     selected_tickers = set()
@@ -721,6 +736,9 @@ def round1_screen(tickers):
     # --- Tarama skorunu hesapla ---------------------------------------------
     df = _compute_screening_scores(df)
     df = df.sort_values("screening_score", ascending=False)
+    # V5.23: katmanı full Round-1 evrenine de yaz; aktif case augmentasyonu
+    # shortlist dışından bir hisse eklediğinde ölçek bilgisi kaybolmasın.
+    df = _assign_cap_buckets(df)
 
     top = _stratified_candidate_selection(df)
     print("\nRound 1 tarama sonucu — Round 2'ye giden adaylar:")
@@ -2327,17 +2345,46 @@ def _most_recent_quarter_end(today):
     return max(candidates) if candidates else None
 
 
+def _recent_quarter_ends(today, years_back=2):
+    """Bugüne kadar olan çeyrek sonlarını yeniden eskiye döndürür."""
+    quarter_ends = [(3, 31), (6, 30), (9, 30), (12, 31)]
+    dates = []
+    for y in range(today.year, today.year - years_back - 1, -1):
+        for m, d in quarter_ends:
+            dt = datetime(y, m, d).date()
+            if dt <= today:
+                dates.append(dt)
+    return sorted(set(dates), reverse=True)
+
+
 def compute_anchored_vwap_signal(daily_df, current_price, today):
-    """Bilanço gününden (yaklaşık) itibaren Anchored VWAP hesaplar, fiyat
-    üzerindeyse +1, altındaysa -1 döner. Veri yetersizse None (nötr)."""
+    """Yaklaşık bilanço anchor'ından Anchored VWAP sinyali üretir.
+
+    V5.23 düzeltmesi: Çeyrek sonunun tam günü/ertesi birkaç işlem gününde
+    yeni anchor'dan yeterli bar oluşmadığı için bütün hisselerde sinyal N/A
+    oluyordu (örn. 30 Eylül). En yeni anchor en az 5 geçerli işlem barı
+    üretmiyorsa bir önceki çeyrek anchor'ına geri düşer. Böylece teknik
+    katman sırf takvim geçişi nedeniyle topluca bir sinyal kaybetmez.
+    """
     if daily_df is None or daily_df.empty or not current_price:
         return None
-    anchor = _most_recent_quarter_end(today)
-    if anchor is None:
+
+    usable = daily_df[daily_df["turnover"].notna() & (daily_df["turnover"] > 0) & (daily_df["close"] > 0)].copy()
+    if usable.empty:
         return None
-    sub = daily_df[(daily_df["date"].dt.date >= anchor) & daily_df["turnover"].notna() & (daily_df["close"] > 0)]
-    if len(sub) < 3:
+
+    chosen_anchor = None
+    sub = None
+    for anchor in _recent_quarter_ends(today):
+        candidate = usable[usable["date"].dt.date >= anchor]
+        if len(candidate) >= 5:
+            chosen_anchor = anchor
+            sub = candidate
+            break
+
+    if chosen_anchor is None or sub is None or len(sub) < 5:
         return None
+
     volume_approx = sub["turnover"] / sub["close"]
     total_vol = volume_approx.sum()
     if total_vol <= 0:
