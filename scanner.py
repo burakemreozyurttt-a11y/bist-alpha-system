@@ -201,9 +201,23 @@ THESIS_CACHE_FILE = os.path.join(os.path.dirname(__file__), "fundamental_thesis_
 THESIS_MAX_AGE_DAYS = 30
 THESIS_PRICE_REVIEW_PCT = 0.15      # analiz fiyatından ±%15 uzaklaşınca yeniden değerlendir
 THESIS_BASE_REVIEW_PCT = 0.08       # fiyat Base'e %8 yaklaşınca yeniden değerlendir
-THESIS_CACHE_VERSION = "PERSISTENT_MULTI_AGENT_V2_MULTI_PROVIDER"
-MAX_FULL_REANALYSES_PER_RUN = 10  # Bear/Bull Groq + CRO Gemini; persistent thesis ile günlük üst sınır
+THESIS_CACHE_VERSION = "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD"
+MAX_FULL_REANALYSES_PER_RUN = 10  # persistent thesis ile günlük tam Bear/Bull/CRO üst sınırı
 REPORT_NOT_FOUND_RETRY_DAYS = 3     # "rapor bulunamadı" sonucu çok daha kısa süre önbelleklenir
+
+# --- V5.25: Thesis Stability + Degraded Data Protection --------------------
+# Fiyat hareketi tek başına fundamental tezi yeniden yazmaz. Base'e yaklaşma
+# case lifecycle tarafından yönetilir; Bear/Bull/CRO yalnızca gerçekten yeni
+# temel bilgi, yeni aday veya periyodik review olduğunda tam çalışır.
+PRICE_ONLY_REVIEW_REASONS = {"BASE_GAP_BELOW_8", "PRICE_MOVE_15PCT"}
+THESIS_MAJOR_SCORE_SHIFT = 12.0      # aynı fundamental fingerprint ile bundan büyük skor sıçraması korunur
+THESIS_MAJOR_FV_SHIFT_PCT = 0.15     # aynı fingerprint ile Base FV %15+ oynarsa tek review ile kabul edilmez
+
+# Round1 veri kapsamı normal finansal-cache evreninin %95 altına düşerse run
+# DEGRADED sayılır. Böyle bir günde ranking üretilebilir ama case açma/kapama
+# state'i dondurulur; geçici veri sağlayıcı arızası case yaşam döngüsünü bozmaz.
+ROUND1_DEGRADED_MIN_COVERAGE = 0.95
+ROUND1_HEALTH = {"degraded": False, "coverage": 1.0, "collected": 0, "expected": 0, "reason": None}
 
 # Faz 5 (RAG) şimdilik RAFA KALDIRILDI: KAP'ın bildirim sayfası JavaScript ile
 # dolduruluyor, düz bir HTTP isteği PDF linkini göremiyor; resmi indirme API'si
@@ -250,10 +264,10 @@ backup_client = genai.Client(api_key=GEMINI_API_KEY_BACKUP) if GEMINI_API_KEY_BA
 # --------------------------------------------------------------------------
 # VERSIONING — istatistiklerde metodoloji değişimini ayırmak için
 # --------------------------------------------------------------------------
-APP_VERSION = "V5.23"
+APP_VERSION = "V5.25"
 SCORING_VERSION = "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3"
 VALUATION_VERSION = "BASE_UPSIDE_DISCIPLINE_V2"
-CASE_ENGINE_VERSION = "CASE_LIFECYCLE_V3"
+CASE_ENGINE_VERSION = "CASE_LIFECYCLE_V4_STABILITY_GUARD"
 
 
 # --------------------------------------------------------------------------
@@ -603,7 +617,7 @@ LAST_ROUND1_SCORED_DF = None
 
 
 def round1_screen(tickers):
-    global LAST_ROUND1_SCORED_DF
+    global LAST_ROUND1_SCORED_DF, ROUND1_HEALTH
     """TAM FUNDAMENTAL TARAMA (orijinal sistemin 49. bölümündeki ROUND 1).
 
     Her hisse için:
@@ -684,6 +698,26 @@ def round1_screen(tickers):
 
     df = pd.DataFrame(rows)
     print(f"Veri toplanabilen hisse sayısı: {len(df)} / {total}")
+
+    # V5.25: veri sağlayıcı arızasını state makinesinden ayır. Finansal cache
+    # normal canlı evren için iyi bir baseline'dır (son günlerde ~603).
+    expected_live = max(1, len(cache))
+    coverage = len(df) / expected_live
+    degraded = coverage < ROUND1_DEGRADED_MIN_COVERAGE
+    ROUND1_HEALTH = {
+        "degraded": degraded,
+        "coverage": coverage,
+        "collected": len(df),
+        "expected": expected_live,
+        "reason": "PRICE_DATA_COVERAGE_LOW" if degraded else None,
+    }
+    print(
+        f"[ROUND1-HEALTH] collected={len(df)} expected≈{expected_live} "
+        f"coverage=%{coverage*100:.1f} degraded={degraded}"
+    )
+    if degraded:
+        print("[SCAN-DEGRADED] Fiyat/veri kapsamı normal baseline'ın %95 altına düştü; case açma/kapama bu run'da dondurulacak.")
+
     if df.empty:
         print("Hiçbir hisse için veri toplanamadı.")
         return df
@@ -1565,6 +1599,80 @@ def fundamental_input_fingerprint(candidate):
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
+def _price_only_cache_repair(cached_entry, previous_item, candidate):
+    """V5.25 migration guard.
+
+    V5.24 ve öncesinde BASE_GAP_BELOW_8 / PRICE_MOVE_15PCT tetikleri tam
+    Bear/Bull/CRO zincirini yeniden çalıştırabiliyor ve aynı fundamental veriyle
+    bile tezi sert biçimde overwrite edebiliyordu. Eğer son cache bu iki
+    fiyat-tetikli review'dan geldiyse ve bir önceki başarılı günlük kayıtta
+    aynı tezin sayısal omurgası varsa, fiyat-tetikli overwrite'i geri al.
+    """
+    if not cached_entry or not cached_entry.get("result") or not previous_item:
+        return False
+    result = cached_entry.get("result") or {}
+    reason = result.get("thesis_reanalysis_reason") or cached_entry.get("thesis_reanalysis_reason")
+    if reason not in PRICE_ONLY_REVIEW_REASONS:
+        return False
+    # Fundamental fingerprint bugün de aynıysa fiyat dışı yeni veri yok demektir.
+    current_fp = fundamental_input_fingerprint(candidate)
+    cached_fp = cached_entry.get("input_fingerprint")
+    if cached_fp and cached_fp != current_fp:
+        return False
+
+    old_fund = _safe_float(previous_item.get("fundamental_score"))
+    new_fund = _safe_float(result.get("alpha_score"))
+    old_base = _safe_float(previous_item.get("base_fv"))
+    new_base = _safe_float(result.get("base_fv"))
+    if old_fund is None or old_base is None:
+        return False
+
+    score_shift = abs((new_fund if new_fund is not None else old_fund) - old_fund)
+    fv_shift = abs((new_base / old_base) - 1.0) if new_base is not None and old_base else 0.0
+    if score_shift < 1e-9 and fv_shift < 1e-9:
+        return False
+
+    # Önceki doğrulanmış sayısal tezi geri getir. Metin alanları cache'de
+    # kalabilir; scoring/FV omurgası fiyat yüzünden yeniden yazılmasın.
+    result["alpha_score"] = old_fund
+    for key in ("bear_fv", "base_fv", "bull_fv", "base_revision_status",
+                "base_revision_evidence", "upside_case_status", "upside_evidence",
+                "verdict", "data_confidence"):
+        if previous_item.get(key) is not None:
+            result[key] = previous_item.get(key)
+    result["thesis_reused"] = True
+    result["thesis_stability_repair"] = True
+    result["discarded_price_only_review_reason"] = reason
+    cached_entry["result"] = result
+    cached_entry["analysis_price"] = previous_item.get("price") or cached_entry.get("analysis_price")
+    cached_entry["analyzed_at"] = previous_item.get("date") or cached_entry.get("analyzed_at")
+    cached_entry["input_fingerprint"] = current_fp
+    cached_entry.pop("legacy_seed", None)
+    print(
+        f"  [TEZ-STABILITY-REPAIR {candidate.get('ticker')}] fiyat-tetikli {reason} overwrite'i geri alındı "
+        f"| fundamental {new_fund} -> {old_fund} | Base {new_base} -> {old_base}"
+    )
+    return True
+
+
+def _major_same_input_shift(cached_entry, new_result, candidate):
+    """Aynı fundamental fingerprint ile periyodik review aşırı oynuyorsa
+    tek çağrıyla eski tezi overwrite etme. Gerçek input değişiminde guard yok."""
+    if not cached_entry or not cached_entry.get("result"):
+        return False
+    current_fp = fundamental_input_fingerprint(candidate)
+    if cached_entry.get("input_fingerprint") != current_fp:
+        return False
+    old = cached_entry.get("result") or {}
+    old_score = _safe_float(old.get("alpha_score"))
+    new_score = _safe_float(new_result.get("alpha_score"))
+    old_base = _safe_float(old.get("base_fv"))
+    new_base = _safe_float(new_result.get("base_fv"))
+    score_shift = abs(new_score - old_score) if old_score is not None and new_score is not None else 0.0
+    fv_shift = abs(new_base / old_base - 1.0) if old_base and new_base else 0.0
+    return score_shift >= THESIS_MAJOR_SCORE_SHIFT or fv_shift >= THESIS_MAJOR_FV_SHIFT_PCT
+
+
 def thesis_reanalysis_reason(candidate, cached_entry, active_case=None):
     """None => eski çok-ajan tezini güvenle yeniden kullan.
     String => Bear/Bull/CRO tam zincirini yeniden çalıştır."""
@@ -1586,22 +1694,12 @@ def thesis_reanalysis_reason(candidate, cached_entry, active_case=None):
         except Exception:
             return "CACHE_DATE_INVALID"
 
-    old_price = _safe_float(cached_entry.get("analysis_price"))
+    # V5.25: PRICE_MOVE_15PCT ve BASE_GAP_BELOW_8 artık tam fundamental
+    # re-analysis tetiklemez. Fiyat, fundamental input değildir. Base'e yaklaşma
+    # APPROACHING_BASE lifecycle statüsüyle; fiyat hareketi ise güncel teknik ve
+    # opportunity gate ile yönetilir. Böylece aynı bilanço 68 -> 45 gibi sırf
+    # model varyansından kaynaklanan overwrite üretmez.
     price = _safe_float(candidate.get("price"))
-    if old_price and price and abs(price / old_price - 1.0) >= THESIS_PRICE_REVIEW_PCT:
-        return "PRICE_MOVE_15PCT"
-
-    base_fv = _safe_float((cached_entry.get("result") or {}).get("base_fv"))
-    if base_fv and price and base_fv > 0:
-        gap = (base_fv - price) / price
-        if 0.0 <= gap < THESIS_BASE_REVIEW_PCT:
-            # Base'e yaklaşan aktif tezi her gün yeniden çalıştırmak yerine,
-            # yalnızca önceki analiz zaten bu eşikte değilse review tetikle.
-            prev_gap = None
-            if old_price:
-                prev_gap = (base_fv - old_price) / old_price
-            if prev_gap is None or prev_gap >= THESIS_BASE_REVIEW_PCT:
-                return "BASE_GAP_BELOW_8"
 
     if active_case and active_case.get("status") == "BULL_CASE_WATCH":
         last_review = cached_entry.get("bull_watch_reviewed_at")
@@ -2975,6 +3073,13 @@ def round2_deep_analysis(candidates_df, last_seen_map=None, active_cases=None):
         cached_entry = thesis_tickers.get(ticker)
         active_case = active_case_map.get(ticker)
 
+        # V5.25 migration: V5.24 ve öncesindeki fiyat-tetikli yanlış overwrite
+        # varsa bir önceki başarılı günlük tez omurgasını otomatik geri getir.
+        previous_item_for_repair = (last_seen_map or {}).get(ticker)
+        if _price_only_cache_repair(cached_entry, previous_item_for_repair, candidate):
+            thesis_tickers[ticker] = cached_entry
+            save_thesis_cache(thesis_cache)
+
         # V5.20 ilk çalıştırmada thesis cache boş olabilir. Önceki başarılı
         # günlük history varsa bunu yalnızca geçiş/fallback amacıyla seed et.
         if cached_entry is None:
@@ -3044,6 +3149,24 @@ def round2_deep_analysis(candidates_df, last_seen_map=None, active_cases=None):
             result = _refresh_reused_result(result, row)
             result["thesis_reused"] = False
             result["thesis_reanalysis_reason"] = reason
+
+            # V5.25: fundamental fingerprint değişmemişken periyodik/model
+            # review tek çağrıda skoru veya Base FV'yi aşırı oynatırsa eski
+            # doğrulanmış tezi koru. Gerçek FUNDAMENTAL_INPUT_CHANGED durumunda
+            # bu guard devreye girmez.
+            if reason != "FUNDAMENTAL_INPUT_CHANGED" and _major_same_input_shift(cached_entry, result, candidate):
+                old_result = _refresh_reused_result(cached_entry["result"], row)
+                old_result["thesis_reused"] = True
+                old_result["thesis_review_pending"] = True
+                old_result["thesis_reanalysis_reason"] = reason
+                print(
+                    f"  [TEZ-STABILITY {ticker}] aynı fundamental input ile büyük review sapması; "
+                    "mevcut doğrulanmış tez korunuyor"
+                )
+                results.append(old_result)
+                reused_count += 1
+                continue
+
             today = datetime.now(TR_TZ).strftime("%Y-%m-%d")
             entry = {
                 "analyzed_at": today,
@@ -3554,6 +3677,52 @@ def reconcile_case_continuity(previous_day_top10_map, active, history, daily):
             _restore_case_from_daily_history(ticker, active, history, daily, previous_item, previous_date)
 
 
+def restore_cases_after_thesis_stability_repair(analyzed, active, history):
+    """V5.25 state migration guard.
+
+    Önceki sürümde price-only review yüzünden yanlışlıkla fundamental skor düşüp
+    TOP10_EXIT ile kapanmış bir case, cache stability repair ile geri alındıysa
+    son kapanmış case'i yeniden aktive eder. Böylece aynı tez yeni case_id ile
+    başlamaz ve APPROACHING_BASE continuity korunur.
+    """
+    repaired = {x.get("ticker") for x in analyzed if x.get("thesis_stability_repair") and x.get("ticker")}
+    if not repaired:
+        return
+    today = datetime.now(TR_TZ).date()
+    closed_cases = history.get("closed_cases", [])
+    for ticker in sorted(repaired):
+        if ticker in active.get("cases", {}):
+            continue
+        restore_idx = None
+        for i in range(len(closed_cases) - 1, -1, -1):
+            c = closed_cases[i]
+            if c.get("ticker") != ticker or c.get("close_reason") != "TOP10_EXIT":
+                continue
+            try:
+                close_date = datetime.strptime(c.get("close_date"), "%Y-%m-%d").date()
+                if (today - close_date).days > 7:
+                    continue
+            except Exception:
+                continue
+            restore_idx = i
+            break
+        if restore_idx is None:
+            continue
+        old = closed_cases.pop(restore_idx)
+        old["close_date"] = None
+        old["close_reason"] = None
+        old.pop("exit_price", None)
+        old.pop("exit_rank", None)
+        old.pop("case_return_pct", None)
+        old.pop("outcome", None)
+        old["app_version"] = APP_VERSION
+        old["scoring_version"] = SCORING_VERSION
+        old["valuation_version"] = VALUATION_VERSION
+        old["case_engine_version"] = CASE_ENGINE_VERSION
+        active.setdefault("cases", {})[ticker] = old
+        print(f"  [CASE-STABILITY-REPAIR {ticker}] {old.get('case_id')} yeniden aktive edildi")
+
+
 def augment_candidates_with_active_cases(candidates_df, active_store):
     """Aktif case'ler Round1 shortlist'inden düşse de günlük yeniden analiz edilir.
     Özellikle APPROACHING_BASE ve BULL_CASE_WATCH case'lerinin unutulmasını önler.
@@ -3581,7 +3750,7 @@ def active_main_case_tickers(active_store):
     }
 
 
-def update_case_lifecycle(ranked, analyzed, active, history, daily):
+def update_case_lifecycle(ranked, analyzed, active, history, daily, scan_degraded=False):
     """TOP10 giriş/çıkışlarını case bazında işler.
 
     Önemli:
@@ -3589,6 +3758,7 @@ def update_case_lifecycle(ranked, analyzed, active, history, daily):
     - TOP10'dan doğal sıralama nedeniyle çıkan ACTIVE/APPROACHING case kapanır.
     - Aynı ticker daha sonra tekrar TOP10'a girerse yeni case açılır.
     - Base'e ulaşan case destekli bull-case varsa BULL_CASE_WATCH'a geçebilir.
+    - scan_degraded=True ise veri sağlayıcı arızası yüzünden case açma/kapama dondurulur.
     """
     today = datetime.now(TR_TZ).strftime("%Y-%m-%d")
     top10 = ranked[:10]
@@ -3648,6 +3818,12 @@ def update_case_lifecycle(ranked, analyzed, active, history, daily):
             _append_daily_snapshot(daily, rec, item, rank, today)
             continue
 
+        # TOP10'da değil. DEGRADED run'da eksik veri/sıralama nedeniyle case
+        # kapatma kararı verme; state'i ertesi sağlıklı run'a kadar dondur.
+        if scan_degraded:
+            print(f"  [CASE-FREEZE {tk}] DEGRADED scan; TOP10 çıkışı/case kapanışı ertelendi")
+            continue
+
         # TOP10'da değil. Base gerçekten ulaşılmışsa bull-case'e geçme hakkı var;
         # aksi halde bu case doğal TOP10 çıkışıyla kapanır.
         if item is not None:
@@ -3671,7 +3847,13 @@ def update_case_lifecycle(ranked, analyzed, active, history, daily):
         _close_case(tk, active, history, today, "TOP10_EXIT", item=item)
 
     # 2) Bugünkü TOP10'da olup aktif case'i bulunmayan her ticker için YENİ case aç.
+    # DEGRADED run'da eksik evren göreli ranking'i bozabileceği için yeni case de
+    # açmıyoruz; yalnızca mevcut case'leri koruyoruz.
+    if scan_degraded:
+        print("[CASE-FREEZE] DEGRADED scan; yeni case açılışları bu run için donduruldu")
     for rank, item in enumerate(top10, 1):
+        if scan_degraded:
+            break
         tk = item.get("ticker")
         if not tk:
             continue
@@ -3961,6 +4143,7 @@ def main():
             f"{bucket}={cap_counts.get(bucket, 0)}" for bucket in ["Büyük", "Orta", "Küçük"]
         ))
     analyzed = round2_deep_analysis(candidates_df, last_seen_map=last_seen_map, active_cases=active_cases)
+    restore_cases_after_thesis_stability_repair(analyzed, active_cases, case_history)
     if not analyzed:
         send_telegram_message("⚠️ Fundamental tez katmanından sonuç alınamadı; Gemini erişimi ve thesis cache loglarını kontrol et.")
         return
@@ -3985,7 +4168,8 @@ def main():
         analyzed, continuing_case_tickers=continuing_case_tickers
     )
     active_cases, case_history, case_daily_history = update_case_lifecycle(
-        ranked, analyzed, active_cases, case_history, case_daily_history
+        ranked, analyzed, active_cases, case_history, case_daily_history,
+        scan_degraded=bool(ROUND1_HEALTH.get("degraded"))
     )
     save_case_store(active_cases, case_history, case_daily_history)
     print(f"Final Alpha Engine: {len(ranked)}/{len(analyzed)} aday aktif fırsat havuzunda; TOP10 case takibi ayrı state'te tutuluyor.")
