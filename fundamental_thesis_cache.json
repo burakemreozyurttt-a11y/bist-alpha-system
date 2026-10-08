@@ -2838,28 +2838,28 @@
       }
     },
     "BIGTK": {
-      "analyzed_at": "2026-10-07",
-      "analysis_price": 57.05,
-      "input_fingerprint": "0f00a594979456925ebe3a7ed1f92c5800e58d3030bd49adfc4538bdec83966c",
+      "analyzed_at": "2026-10-08",
+      "analysis_price": 51.5,
+      "input_fingerprint": "432effe8cf510b2d2d95a15f8059bf0ab32d28119fafd5dea7381cc78b2c7b1d",
       "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
       "result": {
         "alpha_score": 62,
         "data_confidence": 85,
-        "bear_fv": 35.0,
-        "base_fv": 51.0,
+        "bear_fv": 32.5,
+        "base_fv": 45.0,
         "bull_fv": null,
         "base_revision_status": "UNCHANGED",
         "base_revision_evidence": [],
         "upside_case_status": "UNSUPPORTED",
         "upside_evidence": [],
-        "thesis_summary": "Şirket, yüksek net kâr artışı ve güçlü nakit yaratma kapasitesi ile dikkat çekerken, ciro ivmesindeki kayıplar ve daralan marjlar operasyonel riskleri artırmaktadır. Mevcut fiyat seviyeleri, fundamental verilerdeki zıt sinyaller nedeniyle temkinli bir değerleme yaklaşımını zorunlu kılmaktadır.",
+        "thesis_summary": "Şirket, %336 net kâr artışı ve 2.60 nakit dönüşüm oranıyla güçlü bir nakit yaratma kapasitesi sergilerken, çeyreklik ciro ivmesindeki sert yavaşlama ve marj kayıpları operasyonel riskleri artırmaktadır. Mevcut fiyatlar bu daralmanın bir kısmını yansıtarak değerleme açığı yaratmaktadır.",
         "catalysts": [
-          "Net kârın yıllık bazda %336 oranında artması, şirketin operasyonel kârlılık gücünü ve kazanç potansiyelini açıkça kanıtlamaktadır.",
-          "İşletme nakit akışının net kâra oranının 2.60 seviyesinde gerçekleşmesi, elde edilen kârın yüksek kalitede nakde dönüştüğünü gösterir."
+          "Net kârın yıllık yüzde 336 oranında artması, esas faaliyet kazanç gücünün korunduğunu gösterir.",
+          "İşletme nakit akışının net kârın 2.60 katı gerçekleşmesi, kârlılığın nakit kalitesini kanıtlar."
         ],
         "risks": [
-          "Ciro büyüme ivmesindeki %255 oranındaki sert çöküş, ana faaliyet kollarındaki yavaşlamanın operasyonel ivmeyi tükettiğini doğrulamaktadır.",
-          "Brüt ve faaliyet marjlarındaki yaklaşık %19'luk daralmalar, maliyet baskılarının kârlılık üzerinde yarattığı erimeyi açıkça ortaya koyar."
+          "Ciro büyüme ivmesinin eksi yüzde 255 seviyesine gerilemesi, ana faaliyetlerdeki büyümenin durduğunu gösterir.",
+          "Brüt ve faaliyet marjlarındaki yaklaşık yüzde 18-19 daralmalar, maliyet baskılarının kârlılığı erittiğini gösterir."
         ],
         "verdict": "WATCH",
         "_llm_provider": "gemini-primary",
@@ -2870,9 +2870,9 @@
         ],
         "ticker": "BIGTK",
         "name": "BIGTK",
-        "price": 57.05,
-        "_bear_case": "BIGTK, %-255.51'lik dramatik ciro ivmesi kaybı ve sırasıyla %18.01 ile %19.46 oranlarında daralan marjlarıyla klasik bir döngüsel zirve tuzağı sergilemektedir. Son çeyreklerdeki %80'e varan devasa hisse değer kayıpları ve zayıf %14.39 ROE oranı, ucuz görünen 9.51 F/K oranının aslında kalıcı bir değer tuzağına işaret ettiğini doğrulamaktadır.",
-        "_bull_case": "BIGTK, son dönemde yaşadığı sert fiyat düşüşlerine rağmen %336'lık güçlü net kâr artışı ve 9.51 gibi cazip bir F/K çarpanı sunmaktadır. Düşük net borçluluk oranı ve yüksek nakit kalitesi, şirketin bilanço risklerini sınırlayarak olası bir toparlanma sürecini desteklemektedir.",
+        "price": 51.5,
+        "_bear_case": "BIGTK, %-255.51 seviyesine gerileyen ciro ivmesi ve yıllık bazda %18 ile %19'a varan marj kayıplarıyla tehlikeli bir döngüsel zirve bölgesindedir. 51.5 TL fiyatla işlem gören hissede, 20 günlük %81.47'lik sert düşüş yatırımcıların operasyonel zayıflamayı fiyatlamaya başladığını göstermektedir.",
+        "_bull_case": "BIGTK, son dönemde yaşadığı sert fiyat düşüşlerine rağmen %336'lık güçlü net kâr artışı ve 2.60 gibi yüksek nakit dönüşüm oranıyla temel açıdan cazip seviyelerdedir. Düşük borçluluk yapısı ve 8.58 F/K ile 1.24 PD/DD çarpanları, hissenin aşırı satım bölgesinden toparlanması için sağlam bir zemin oluşturmaktadır.",
         "_value_trap_risk": 75,
         "llm_trace": {
           "bear": {
@@ -2890,14 +2890,14 @@
         },
         "data_confidence_raw": 100,
         "low_liquidity_flag": false,
-        "screening_score": 64.6,
+        "screening_score": 66.0,
         "cap_bucket": "Küçük",
-        "score_valuation": 0.45543105543105544,
-        "score_momentum": 0.9248744629083191,
+        "score_valuation": 0.5204525204525204,
+        "score_momentum": 0.924520233625365,
         "score_acceleration": 0.30583941605839415,
         "score_margin": 0.15682604806720074,
         "score_balance": 0.7710553510146404,
-        "score_divergence": 0.9792746113989638,
+        "score_divergence": 0.9827288428324698,
         "cfo_to_net_income": 2.6,
         "roe": 0.1439,
         "revenue_growth": 0.5871,
@@ -2908,37 +2908,162 @@
         "operating_margin_trend": -0.1946,
         "net_debt_to_equity": 0.05,
         "debt_to_equity": 0.42,
-        "_return_20d": -0.797335701598579,
-        "_return_60d": -0.7936708860759494,
+        "_return_20d": -0.814748201438849,
+        "_return_60d": -0.8108356290174472,
         "thesis_reused": false,
-        "thesis_reanalysis_reason": "NEW_CANDIDATE"
+        "thesis_reanalysis_reason": "FUNDAMENTAL_INPUT_CHANGED"
       }
     },
     "BASGZ": {
-      "analyzed_at": "2026-09-23",
-      "analysis_price": 39.18,
+      "analyzed_at": "2026-10-08",
+      "analysis_price": 39.06,
       "input_fingerprint": "1b24f3228b12ba9e300050459d0676fe8fc5b5cd66b843f782e558ca219cf12b",
       "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
-      "legacy_seed": true,
       "result": {
-        "ticker": "BASGZ",
-        "name": "BASGZ",
-        "price": 39.18,
-        "alpha_score": 58.0,
-        "data_confidence": 0,
-        "bear_fv": 32.0,
+        "alpha_score": 58,
+        "data_confidence": 85,
+        "bear_fv": 31.2,
         "base_fv": 44.0,
-        "bull_fv": 65.0,
+        "bull_fv": null,
         "base_revision_status": "UNCHANGED",
         "base_revision_evidence": [],
         "upside_case_status": "UNSUPPORTED",
         "upside_evidence": [],
+        "thesis_summary": "BASGZ düşük F/K ve %19 ROE ile değer açısından cazip, fakat kâr büyümesinin daralması, marj erozyonu ve nakit akışının net kârın gerisinde kalması kalite riskini artırıyor. Sağlam bilanço ve negatif net borç finansal esnekliği korurken, fiyat hâlâ temel değerin altında; ancak ölçülebilir bir iyileşme katalizörü yok, bu yüzden fırsat sınırlı.",
+        "catalysts": [
+          "Trailing F/K 3.91 ve PD/DD 0.74, şirketin piyasa fiyatı temel kazanç ve varlık değerlerinden önemli bir iskonto sunuyor, bu da potansiyel upside yaratıyor.",
+          "Net finansal borç/özsermaye -%6, yani şirket net borçtan arınmış; bu düşük finansal risk, dalgalı piyasalarda hisseyi koruyabilir."
+        ],
+        "risks": [
+          "İşletme nakit akışı/net kâr oranı 0.61, kârın büyük kısmı nakde dönüşmüyor, bu da sürdürülebilir kârlılık ve likidite riskini yükseltiyor.",
+          "Brüt marj %0.6 ve faaliyet marj %1.03 düşüşte, net kâr %0.82 küçülürken, büyüme ivmesi artış gösterse de temel kâr erozyonu şirketin değerini eritebilir."
+        ],
         "verdict": "WATCH",
-        "thesis_summary": "Önceki geçerli fundamental tez korunuyor; yeni doğrulama sıraya alınmıştır.",
-        "catalysts": [],
-        "risks": [],
-        "thesis_reused": true,
-        "thesis_legacy_seed": true
+        "_llm_provider": "groq",
+        "_llm_model": "openai/gpt-oss-120b",
+        "fundamental_change_detected": false,
+        "fundamental_change_evidence": [],
+        "ticker": "BASGZ",
+        "name": "BASGZ",
+        "price": 39.06,
+        "_bear_case": "Şirket, düşük F/K oranına rağmen ciro büyümesindeki kronik yavaşlama ve marj daralmaları nedeniyle bir değer tuzağı sinyali vermektedir. İşletme nakit akışının net kârın oldukça gerisinde kalması kâr kalitesini zedelerken, son dönemdeki sert hisse fiyatı düşüşleri piyasanın bu zayıflıkları fiyatlamaya başladığını göstermektedir.",
+        "_bull_case": "BASGZ, 3.91 F/K ve 0.74 PD/DD çarpanlarıyla tarihi ortalamalarına kıyasla güçlü bir iskontoya işaret ederken, çeyreklik net kâr büyüme ivmesindeki %65.03'lük sert artış operasyonel toparlanmanın hızlandığını göstermektedir. Negatif net finansal borç/özsermaye oranı (-0.06) ve güçlü bilanço yapısı, şirketin mevcut piyasa koşullarında finansal esnekliğini korumasını sağlamaktadır.",
+        "_value_trap_risk": 65,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "groq",
+            "model": "openai/gpt-oss-120b"
+          }
+        },
+        "data_confidence_raw": 90,
+        "low_liquidity_flag": false,
+        "screening_score": 62.9,
+        "cap_bucket": "Büyük",
+        "score_valuation": 0.7547965547965547,
+        "score_momentum": 0.6023518982060909,
+        "score_acceleration": 0.6721354608725174,
+        "score_margin": 0.49431081641647867,
+        "score_balance": 0.8166695505333551,
+        "score_divergence": 0.36787564766839376,
+        "cfo_to_net_income": 0.61,
+        "roe": 0.1902,
+        "revenue_growth": 0.0892,
+        "earnings_growth": -0.0082,
+        "revenue_acceleration": 0.0268,
+        "earnings_acceleration": 0.6503,
+        "gross_margin_trend": -0.006,
+        "operating_margin_trend": -0.0103,
+        "net_debt_to_equity": -0.06,
+        "debt_to_equity": 0.86,
+        "_return_20d": -0.13964757709251097,
+        "_return_60d": -0.1614426792614856,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "LEGACY_BOOTSTRAP_REVIEW"
+      }
+    },
+    "BNTAS": {
+      "analyzed_at": "2026-10-08",
+      "analysis_price": 5.32,
+      "input_fingerprint": "bdc1f848b264e406d7727149bcd8f15f7af13677a29e5b7fd6b2e6eb16852bd7",
+      "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
+      "result": {
+        "alpha_score": 62,
+        "data_confidence": 85,
+        "bear_fv": 3.75,
+        "base_fv": 5.1,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "thesis_summary": "Şirket, 2.66 F/K ve 0.43 PD/DD oranlarıyla belirgin bir iskonto sunarken, güçlü net nakit pozisyonu ve yüksek nakit dönüşümü finansal sağlığını korumaktadır. Buna karşın ciro daralması ve brüt marzdaki erime, operasyonel ivme kaybına işaret ederek değer tuzağı riskini canlı tutmaktadır.",
+        "catalysts": [
+          "Net finansal borcun özsermayeye oranının -0.40 seviyesinde bulunması, faiz yükünden arınmış bir yapı ve güçlü bir bilançoya işaret etmektedir.",
+          "İşletme nakit akışının net kârın 3.31 katı gerçekleşmesi, kârlılığın nakde dönüşüm kalitesinin oldukça yüksek olduğunu doğrulamaktadır."
+        ],
+        "risks": [
+          "Yıllık ciro büyümesinin yüzde 3.95 oranında daralması, şirketin enflasyonist ortamda dahi büyüme üretemediğini ve talep baskısı yaşadığını göstermektedir.",
+          "Brüt kâr marjının yıllık bazda yüzde 1.85 daralması, maliyetlerin tam olarak yönetilemediğini ve faaliyet kârlılığında zayıflama başladığını kanıtlamaktadır."
+        ],
+        "verdict": "WATCH",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.5-flash-lite",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "ilk değerleme"
+        ],
+        "ticker": "BNTAS",
+        "name": "BNTAS",
+        "price": 5.32,
+        "_bear_case": "BNTAS, 2.66 F/K ve 0.43 PD/DD gibi cazip görünen çarpanlarına rağmen yıllık bazda %3.95 ciro daralması yaşayarak bir değer tuzağı sinyali vermektedir. Son dönemdeki sert fiyat düşüşleri ve brüt marzdaki %1.85'lik erime, şirketin operasyonel gücünü kaybettiğini ve mevcut ucuzluğun kalıcı bir risk barındırdığını teyit etmektedir.",
+        "_bull_case": "BNTAS, 0.43 PD/DD ve 2.66 F/K ile derin bir iskonto sunarken, 0.92 bilanço skoru ve negatif net borç/özsermaye oranıyla güçlü bir finansal yapı sergilemektedir. Net kâr büyüme ivmesindeki %31.30'luk artış ve yüksek nakit dönüşüm oranı, mevcut fiyat düşüşlerinin ardından rasyonel bir toparlanma potansiyelini desteklemektedir.",
+        "_value_trap_risk": 75,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          }
+        },
+        "data_confidence_raw": 100,
+        "low_liquidity_flag": false,
+        "screening_score": 64.2,
+        "cap_bucket": "Küçük",
+        "score_valuation": 0.8674622674622674,
+        "score_momentum": 0.5229974968710889,
+        "score_acceleration": 0.6256492955355627,
+        "score_margin": 0.5354233102590029,
+        "score_balance": 0.9175786093994829,
+        "score_divergence": 0.3540587219343696,
+        "cfo_to_net_income": 3.31,
+        "roe": 0.1599,
+        "revenue_growth": -0.0395,
+        "earnings_growth": -0.0033,
+        "revenue_acceleration": 0.0352,
+        "earnings_acceleration": 0.313,
+        "gross_margin_trend": -0.0185,
+        "operating_margin_trend": 0.0225,
+        "net_debt_to_equity": -0.4,
+        "debt_to_equity": 0.13,
+        "_return_20d": -0.16220472440944878,
+        "_return_60d": -0.15955766192733012,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "NEW_CANDIDATE"
       }
     }
   }
