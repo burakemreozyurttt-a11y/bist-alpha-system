@@ -1,85 +1,5 @@
 [
   {
-    "date": "2026-09-15",
-    "ranking": [
-      {
-        "ticker": "TUPRS",
-        "rank": 1,
-        "alpha_score": 75
-      },
-      {
-        "ticker": "THYAO",
-        "rank": 2,
-        "alpha_score": 75
-      },
-      {
-        "ticker": "GUBRF",
-        "rank": 3,
-        "alpha_score": 72
-      },
-      {
-        "ticker": "ASTOR",
-        "rank": 4,
-        "alpha_score": 65
-      },
-      {
-        "ticker": "BIMAS",
-        "rank": 5,
-        "alpha_score": 65
-      },
-      {
-        "ticker": "BRSAN",
-        "rank": 6,
-        "alpha_score": 65
-      },
-      {
-        "ticker": "ASELS",
-        "rank": 7,
-        "alpha_score": 62
-      },
-      {
-        "ticker": "AKBNK",
-        "rank": 8,
-        "alpha_score": 62
-      },
-      {
-        "ticker": "OZATD",
-        "rank": 9,
-        "alpha_score": 45
-      },
-      {
-        "ticker": "ODINE",
-        "rank": 10,
-        "alpha_score": 45
-      },
-      {
-        "ticker": "KCHOL",
-        "rank": 11,
-        "alpha_score": 45
-      },
-      {
-        "ticker": "MGROS",
-        "rank": 12,
-        "alpha_score": 45
-      },
-      {
-        "ticker": "GUNDG",
-        "rank": 13,
-        "alpha_score": 35
-      },
-      {
-        "ticker": "SELEC",
-        "rank": 14,
-        "alpha_score": 35
-      },
-      {
-        "ticker": "ALKLC",
-        "rank": 15,
-        "alpha_score": 30
-      }
-    ]
-  },
-  {
     "date": "2026-09-16",
     "ranking": [
       {
@@ -3675,6 +3595,165 @@
         "thesis_reanalysis_reason": "LEGACY_BOOTSTRAP_REVIEW",
         "thesis_stale_fallback": false,
         "verdict": "WATCH"
+      }
+    ]
+  },
+  {
+    "date": "2026-10-09",
+    "app_version": "V5.25",
+    "scoring_version": "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3",
+    "valuation_version": "BASE_UPSIDE_DISCIPLINE_V2",
+    "case_engine_version": "CASE_LIFECYCLE_V4_STABILITY_GUARD",
+    "ranking": [
+      {
+        "ticker": "TUPRS",
+        "rank": 1,
+        "alpha_score": 64.4,
+        "fundamental_score": 68.0,
+        "technical_score": 56.0,
+        "technical_coverage": 1.0,
+        "technical_available_signals": 9,
+        "base_upside_pct": 24.3,
+        "quality_eligible": true,
+        "top3_eligible": true,
+        "price": 386.25,
+        "bear_fv": 280.5,
+        "base_fv": 480.0,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "revenue_growth": 0.4281,
+        "earnings_growth": 3.1987,
+        "revenue_acceleration": 0.3328,
+        "earnings_acceleration": null,
+        "gross_margin_trend": 0.0581,
+        "operating_margin_trend": 0.0668,
+        "roe": 0.2186,
+        "net_debt_to_equity": -0.28,
+        "cfo_to_net_income": 2.66,
+        "app_version": "V5.25",
+        "scoring_version": "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3",
+        "valuation_version": "BASE_UPSIDE_DISCIPLINE_V2",
+        "case_engine_version": "CASE_LIFECYCLE_V4_STABILITY_GUARD",
+        "thesis_reused": true,
+        "thesis_reanalysis_reason": "LEGACY_BOOTSTRAP_REVIEW",
+        "thesis_stale_fallback": false,
+        "verdict": "WATCH"
+      },
+      {
+        "ticker": "INDES",
+        "rank": 2,
+        "alpha_score": 62.8,
+        "fundamental_score": 60.2,
+        "technical_score": 69.0,
+        "technical_coverage": 1.0,
+        "technical_available_signals": 9,
+        "base_upside_pct": 15.2,
+        "quality_eligible": true,
+        "top3_eligible": true,
+        "price": 11.72,
+        "bear_fv": 7.0,
+        "base_fv": 13.5,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "revenue_growth": 0.3762,
+        "earnings_growth": 1.2347,
+        "revenue_acceleration": 0.2647,
+        "earnings_acceleration": -0.7445,
+        "gross_margin_trend": 0.0204,
+        "operating_margin_trend": 0.017,
+        "roe": 0.1457,
+        "net_debt_to_equity": -0.08,
+        "cfo_to_net_income": 2.56,
+        "app_version": "V5.25",
+        "scoring_version": "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3",
+        "valuation_version": "BASE_UPSIDE_DISCIPLINE_V2",
+        "case_engine_version": "CASE_LIFECYCLE_V4_STABILITY_GUARD",
+        "thesis_reused": true,
+        "thesis_reanalysis_reason": "LEGACY_BOOTSTRAP_REVIEW",
+        "thesis_stale_fallback": false,
+        "verdict": "WATCH"
+      },
+      {
+        "ticker": "BASGZ",
+        "rank": 3,
+        "alpha_score": 61.0,
+        "fundamental_score": 58.0,
+        "technical_score": 68.0,
+        "technical_coverage": 1.0,
+        "technical_available_signals": 9,
+        "base_upside_pct": 9.0,
+        "quality_eligible": true,
+        "top3_eligible": true,
+        "price": 40.38,
+        "bear_fv": 31.2,
+        "base_fv": 44.0,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "revenue_growth": 0.0892,
+        "earnings_growth": -0.0082,
+        "revenue_acceleration": 0.0268,
+        "earnings_acceleration": 0.6503,
+        "gross_margin_trend": -0.006,
+        "operating_margin_trend": -0.0103,
+        "roe": 0.1902,
+        "net_debt_to_equity": -0.06,
+        "cfo_to_net_income": 0.61,
+        "app_version": "V5.25",
+        "scoring_version": "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3",
+        "valuation_version": "BASE_UPSIDE_DISCIPLINE_V2",
+        "case_engine_version": "CASE_LIFECYCLE_V4_STABILITY_GUARD",
+        "thesis_reused": true,
+        "thesis_reanalysis_reason": "LEGACY_BOOTSTRAP_REVIEW",
+        "thesis_stale_fallback": false,
+        "verdict": "WATCH"
+      },
+      {
+        "ticker": "TEHOL",
+        "rank": 4,
+        "alpha_score": 53.6,
+        "fundamental_score": 68.0,
+        "technical_score": 20.0,
+        "technical_coverage": 0.9,
+        "technical_available_signals": 8,
+        "base_upside_pct": 426.3,
+        "quality_eligible": true,
+        "top3_eligible": true,
+        "price": 7.22,
+        "bear_fv": 8.5,
+        "base_fv": 38.0,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [
+          "Finansal veriler ve kârlılık rasyoları önceki dönem analiziyle aynı düzeydedir, yeni kanıt bulunmamaktadır."
+        ],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "revenue_growth": null,
+        "earnings_growth": 0.4174,
+        "revenue_acceleration": null,
+        "earnings_acceleration": null,
+        "gross_margin_trend": -0.0742,
+        "operating_margin_trend": 1.3504,
+        "roe": 0.2902,
+        "net_debt_to_equity": 0.08,
+        "cfo_to_net_income": 1.58,
+        "app_version": "V5.25",
+        "scoring_version": "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3",
+        "valuation_version": "BASE_UPSIDE_DISCIPLINE_V2",
+        "case_engine_version": "CASE_LIFECYCLE_V4_STABILITY_GUARD",
+        "thesis_reused": true,
+        "thesis_reanalysis_reason": "PRICE_MOVE_15PCT",
+        "thesis_stale_fallback": false,
+        "verdict": "ATTRACTIVE"
       }
     ]
   }

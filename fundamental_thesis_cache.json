@@ -1683,44 +1683,40 @@
       }
     },
     "CVKMD": {
-      "analyzed_at": "2026-09-30",
-      "analysis_price": 12.77,
-      "input_fingerprint": "30c11393134af32015f2ce196b46910294b72171c7c5fcdf319aeaea4f84ba60",
-      "cache_version": "PERSISTENT_MULTI_AGENT_V2_MULTI_PROVIDER",
+      "analyzed_at": "2026-10-09",
+      "analysis_price": 13.9,
+      "input_fingerprint": "01a8d4c5a72a0f45a432ff9ec97dc224353f2b445a9b1b1f21a63889ba50adbd",
+      "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
       "result": {
-        "alpha_score": 58,
-        "data_confidence": 80,
-        "bear_fv": 9.5,
+        "alpha_score": 45,
+        "data_confidence": 85,
+        "bear_fv": 8.5,
         "base_fv": 15.2,
         "bull_fv": null,
         "base_revision_status": "UNCHANGED",
-        "base_revision_evidence": [
-          "İlk değerleme analizi yapılmaktadır; nakit akışı zayıflığı nedeniyle muhafazakar taban fiyat belirlenmiştir."
-        ],
+        "base_revision_evidence": [],
         "upside_case_status": "UNSUPPORTED",
         "upside_evidence": [],
-        "thesis_summary": "CVKMD, ivmelenen ciro ve kâr büyümesiyle öne çıkarken düşük çarpanlarıyla cazip görünmektedir. Ancak işletme nakit akışının negatif seyretmesi kâr kalitesine dair ciddi soru işaretleri yaratmaktadır. Mevcut fiyat düşüşü fırsat sunsa da nakit dönüşümü düzelmeden risk profili yüksek kalmaya devam etmektedir.",
+        "thesis_summary": "Şirket, cazip çarpanlar ve yüksek büyüme ivmesi sunarken, zayıf nakit akışı kalitesi ve düşen faaliyet marjları nedeniyle değer tuzağı riski taşımaktadır. Yeni fundamental kanıt olmadığından baz değerleme korunmuştur.",
         "catalysts": [
-          "Çeyreklik ciro büyüme ivmesinin %93.19 seviyesine ulaşması, şirketin operasyonel ölçeğini hızla genişlettiğini göstermektedir.",
-          "Net kâr büyüme ivmesinin %142.62 oranında artması, operasyonel verimliliğin net kârlılık rakamlarına olumlu yansıdığına işaret eder."
+          "Ciro büyüme ivmesindeki yüzde 93,19'luk artış, operasyonel hacmin genişlediğini ve üst sıra gelir üretiminin hızlandığını net biçimde göstermektedir.",
+          "Net kâr büyüme ivmesinde kaydedilen yüzde 142,62 oranındaki güçlü sıçrama, maliyet yönetimindeki olumlu gelişmelerin kârlılığa yansıdığını doğrulamaktadır."
         ],
         "risks": [
-          "İşletme nakit akışının net kâra oranının -1.24 seviyesinde kalması, şirketin kârı nakde dönüştürmekte ciddi bir kriz yaşadığını gösterir.",
-          "Faaliyet marjının %2.15 daralması, satış büyümesine rağmen yükselen maliyet baskısının operasyonel kârlılığı kemirdiğini ortaya koymaktadır."
+          "İşletme nakit akışının net kâra oranının -1.24 seviyesinde gerçekleşmesi, kârın nakde dönüşemediğini gösteren ciddi bir kün kalite krizidir.",
+          "Faaliyet marjının yıllık bazda yüzde 2,15 daralması, şirketin maliyet baskısı altında kaldığını ve operasyonel verimlilik kaybettiğini kanıtlar."
         ],
         "verdict": "WATCH",
         "_llm_provider": "gemini-primary",
-        "_llm_model": "gemini-3.6-flash",
-        "fundamental_change_detected": true,
-        "fundamental_change_evidence": [
-          "ilk değerleme"
-        ],
+        "_llm_model": "gemini-3.5-flash-lite",
+        "fundamental_change_detected": false,
+        "fundamental_change_evidence": [],
         "ticker": "CVKMD",
         "name": "CVKMD",
-        "price": 12.77,
-        "_bear_case": "CVKMD, düşük F/K oranına rağmen kâr kalitesindeki ciddi bozulma ve negatif nakit akışlarıyla tipik bir değer tuzağı sinyali vermektedir. Faaliyet marjındaki daralma ve zayıflayan bilanço yapısı, mevcut ucuzluğun kalıcı bir risk barındırdığını ve hisse fiyatındaki düşüş trendinin derinleşebileceğini göstermektedir.",
-        "_bull_case": "CVKMD, çeyreklik bazda ciro büyüme ivmesindeki %93.19 ve kâr büyüme ivmesindeki %142.62 oranındaki güçlü hızlanma ile dikkat çekmektedir. 6.38 F/K ve 0.75 PD/DD gibi cazip değerleme çarpanları, son dönemdeki %20.98'lik 20 günlük fiyat düşüşüyle birleşerek rasyonel bir toparlanma potansiyeli sunmaktadır.",
-        "_value_trap_risk": 75,
+        "price": 13.9,
+        "_bear_case": "CVKMD hissesi, %11.73 gibi düşük özsermaye kârlılığı ve -1.24 seviyesindeki felaket niteliğindeki işletme nakit akışı/net kâr oranıyla klasik bir değer tuzağına dönüşmektedir. Kâğıt üstündeki ucuz görünen 6.95 F/K oranı, operasyonel kârlılığın nakde dönüşememesi ve faaliyet marjlarındaki erime nedeniyle yanıltıcıdır; en kötü senaryoda bu yapısal nakit yaratma sorunu şirketi finansal çıkmaza sürükleyecektir.",
+        "_bull_case": "CVKMD, çeyreklik bazda ciro büyüme ivmesindeki yüzde 93,19 ve net kâr büyüme ivmesindeki yüzde 142,62'lik güçlü hızlanmayla operasyonel toparlanma sinyali vermektedir. 0,82 PD/DD oranı ve 6,95 Trailing F/K gibi cazip değerleme çarpanları, bu ivmenin korunması durumunda hisse için önemli bir potansiyel barındırmaktadır.",
+        "_value_trap_risk": 85,
         "llm_trace": {
           "bear": {
             "provider": "gemini-primary",
@@ -1732,19 +1728,19 @@
           },
           "cro": {
             "provider": "gemini-primary",
-            "model": "gemini-3.6-flash"
+            "model": "gemini-3.5-flash-lite"
           }
         },
-        "data_confidence_raw": 80,
+        "data_confidence_raw": 100,
         "low_liquidity_flag": false,
-        "screening_score": 67.0,
+        "screening_score": 63.2,
         "cap_bucket": "Orta",
-        "score_valuation": 0.6821000704721635,
-        "score_momentum": 0.7113365572856569,
+        "score_valuation": 0.6443934443934444,
+        "score_momentum": 0.7091207759699625,
         "score_acceleration": 0.8968935664573077,
-        "score_margin": 0.6248690878103675,
-        "score_balance": 0.4532252929599568,
-        "score_divergence": 0.6055363321799307,
+        "score_margin": 0.6210397708122684,
+        "score_balance": 0.45304191860446485,
+        "score_divergence": 0.40932642487046633,
         "cfo_to_net_income": -1.24,
         "roe": 0.1173,
         "revenue_growth": 0.3,
@@ -1755,10 +1751,10 @@
         "operating_margin_trend": -0.0215,
         "net_debt_to_equity": 0.3,
         "debt_to_equity": 1.1,
-        "_return_20d": -0.2097772277227723,
-        "_return_60d": -0.16949571415564324,
+        "_return_20d": -0.07824933687002655,
+        "_return_60d": -0.0678710577316407,
         "thesis_reused": false,
-        "thesis_reanalysis_reason": "NEW_CANDIDATE"
+        "thesis_reanalysis_reason": "FUNDAMENTAL_INPUT_CHANGED"
       }
     },
     "BESTE": {
