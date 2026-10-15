@@ -205,7 +205,7 @@ THESIS_CACHE_VERSION = "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD"
 MAX_FULL_REANALYSES_PER_RUN = 10  # persistent thesis ile günlük tam Bear/Bull/CRO üst sınırı
 REPORT_NOT_FOUND_RETRY_DAYS = 3     # "rapor bulunamadı" sonucu çok daha kısa süre önbelleklenir
 
-# --- V5.25: Thesis Stability + Degraded Data Protection --------------------
+# --- V5.26: Thesis Stability + Provider Failover + Degraded Protection -------
 # Fiyat hareketi tek başına fundamental tezi yeniden yazmaz. Base'e yaklaşma
 # case lifecycle tarafından yönetilir; Bear/Bull/CRO yalnızca gerçekten yeni
 # temel bilgi, yeni aday veya periyodik review olduğunda tam çalışır.
@@ -218,6 +218,31 @@ THESIS_MAJOR_FV_SHIFT_PCT = 0.15     # aynı fingerprint ile Base FV %15+ oynars
 # state'i dondurulur; geçici veri sağlayıcı arızası case yaşam döngüsünü bozmaz.
 ROUND1_DEGRADED_MIN_COVERAGE = 0.95
 ROUND1_HEALTH = {"degraded": False, "coverage": 1.0, "collected": 0, "expected": 0, "reason": None}
+RUN_HEALTH_FILE = os.path.join(os.path.dirname(__file__), "run_health.json")
+
+# V5.26 — veri sağlayıcı dayanıklılığı. İş Yatırım art arda transport hatası
+# verirse TradingView/borsapy günlük verisi ikinci kaynak olarak denenir.
+PRIMARY_PROVIDER_FAILS_BEFORE_FALLBACK = 6
+TRANSPORT_FAILURE_ABORT_THRESHOLD = 18
+PRICE_PROVIDER_STATE = {"mode": "ISYATIRIM", "fallback_activated": False, "fallback_success": 0, "fallback_fail": 0}
+
+
+def save_run_health(status, message=None):
+    payload = {
+        "date": datetime.now(TR_TZ).strftime("%Y-%m-%d"),
+        "timestamp_tr": datetime.now(TR_TZ).isoformat(),
+        "status": status,
+        "message": message,
+        "round1": dict(ROUND1_HEALTH),
+        "price_provider": dict(PRICE_PROVIDER_STATE),
+        "app_version": APP_VERSION,
+    }
+    try:
+        with open(RUN_HEALTH_FILE, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[RUN-HEALTH] yazılamadı: {e}")
+
 
 # Faz 5 (RAG) şimdilik RAFA KALDIRILDI: KAP'ın bildirim sayfası JavaScript ile
 # dolduruluyor, düz bir HTTP isteği PDF linkini göremiyor; resmi indirme API'si
@@ -264,10 +289,10 @@ backup_client = genai.Client(api_key=GEMINI_API_KEY_BACKUP) if GEMINI_API_KEY_BA
 # --------------------------------------------------------------------------
 # VERSIONING — istatistiklerde metodoloji değişimini ayırmak için
 # --------------------------------------------------------------------------
-APP_VERSION = "V5.25"
+APP_VERSION = "V5.26"
 SCORING_VERSION = "FINAL_ALPHA_70_30_OPPORTUNITY_GATE_V3"
 VALUATION_VERSION = "BASE_UPSIDE_DISCIPLINE_V2"
-CASE_ENGINE_VERSION = "CASE_LIFECYCLE_V4_STABILITY_GUARD"
+CASE_ENGINE_VERSION = "CASE_LIFECYCLE_V5_PROVIDER_GUARD"
 
 
 # --------------------------------------------------------------------------
@@ -400,6 +425,59 @@ def fetch_price_snapshot(ticker):
                 print(f"  {ticker}: fiyat verisi alınamadı ({e})")
                 return None, last_exception_was_empty_data
     return None, False
+
+
+def fetch_price_snapshot_borsapy(ticker):
+    """V5.26 ikinci fiyat kaynağı: borsapy/TradingView günlük barları.
+
+    İş Yatırım erişimi genel olarak kesildiğinde Round1'in tamamen boş kalmasını
+    önlemek için kullanılır. Aynı alanları üretir; veri yoksa None döner.
+    """
+    if not TECHNICAL_LAYER_AVAILABLE:
+        return None
+    try:
+        stock = bpy.Ticker(ticker)
+        df = stock.history(period="6mo", interval="1d")
+        if df is None or df.empty:
+            return None
+
+        close_col = _pick_col_ci(df, ["Close", "close", "Kapanış", "Kapanis"])
+        vol_col = _pick_col_ci(df, ["Volume", "volume", "Hacim"])
+        if close_col is None:
+            return None
+
+        closes = pd.to_numeric(df[close_col], errors="coerce").dropna()
+        if closes.empty:
+            return None
+        last_price = float(closes.iloc[-1])
+
+        def _ret(n):
+            if len(closes) > n:
+                past = float(closes.iloc[-(n + 1)])
+                if past > 0:
+                    return (last_price / past) - 1
+            return None
+
+        avg_turnover = None
+        if vol_col is not None:
+            vols = pd.to_numeric(df[vol_col], errors="coerce")
+            px = pd.to_numeric(df[close_col], errors="coerce")
+            turnover = (vols * px).dropna().tail(20)
+            if not turnover.empty:
+                avg_turnover = float(turnover.mean())
+
+        return {
+            "ticker": ticker,
+            "price": last_price,
+            "avg_daily_turnover_try": avg_turnover,
+            "return_5d": _ret(5),
+            "return_20d": _ret(20),
+            "return_60d": _ret(60),
+            "price_source": "BORSAPY_TRADINGVIEW",
+        }
+    except Exception as e:
+        print(f"  [PRICE-FALLBACK {ticker}] borsapy başarısız: {e}")
+        return None
 
 
 ROUND1_TIME_BUDGET_SECONDS = 5 * 3600   # Round 1 en fazla ~5 saat sürsün (18:30-10:00 arası bolca pay var)
@@ -634,6 +712,7 @@ def round1_screen(tickers):
     rows = []
     total = len(tickers)
     consecutive_failures = 0
+    consecutive_transport_failures = 0
     start_time = time.time()
     cache = load_fin_cache()
     fetched_count = 0
@@ -653,17 +732,59 @@ def round1_screen(tickers):
             skipped_dead_count += 1
             continue
 
-        price_data, definitely_no_data = fetch_price_snapshot(tk)
+        # Birinci kaynak normalde İş Yatırım. Genel bağlantı kesintisi algılanırsa
+        # aynı run içinde borsapy/TradingView'a geçilir. Gerçek "sembol yok"
+        # hatası ile transport hatası birbirine karıştırılmaz.
+        if PRICE_PROVIDER_STATE.get("mode") == "BORSAPY":
+            price_data = fetch_price_snapshot_borsapy(tk)
+            definitely_no_data = False
+            if price_data:
+                PRICE_PROVIDER_STATE["fallback_success"] += 1
+            else:
+                PRICE_PROVIDER_STATE["fallback_fail"] += 1
+        else:
+            price_data, definitely_no_data = fetch_price_snapshot(tk)
+
+        if not price_data and not definitely_no_data:
+            consecutive_transport_failures += 1
+            # İş Yatırım arka arkaya erişilemiyorsa ikinci sağlayıcıyı test et.
+            if (
+                PRICE_PROVIDER_STATE.get("mode") == "ISYATIRIM"
+                and consecutive_transport_failures >= PRIMARY_PROVIDER_FAILS_BEFORE_FALLBACK
+                and TECHNICAL_LAYER_AVAILABLE
+            ):
+                fb = fetch_price_snapshot_borsapy(tk)
+                if fb:
+                    PRICE_PROVIDER_STATE.update({"mode": "BORSAPY", "fallback_activated": True})
+                    PRICE_PROVIDER_STATE["fallback_success"] += 1
+                    price_data = fb
+                    print(f"[PRICE-PROVIDER] İş Yatırım art arda {consecutive_transport_failures} transport hatası verdi; Round1 borsapy/TradingView fallback'e geçti.")
+                    consecutive_transport_failures = 0
+                else:
+                    PRICE_PROVIDER_STATE["fallback_fail"] += 1
+
         if not price_data:
-            register_ticker_failure(tk, dead_map)   # gün bazlı strike — tek kötü gün asla dışlamaya yetmez
+            # Ölü-kod strike'ı SADECE sağlayıcı cevap verip gerçekten veri yok
+            # sinyali verdiğinde yazılır. Timeout/503 gibi genel kesintiler gerçek
+            # hisseleri yanlışlıkla dead cache'e itemez.
+            if definitely_no_data:
+                register_ticker_failure(tk, dead_map)
             consecutive_failures += 1
-            if consecutive_failures >= CONSECUTIVE_FAILURE_CIRCUIT_BREAKER:
-                print(f"Üst üste {CONSECUTIVE_FAILURE_CIRCUIT_BREAKER} başarısız istek, veri kaynağı muhtemelen bu IP'yi engelledi. Duruyorum.")
+            if (
+                consecutive_transport_failures >= TRANSPORT_FAILURE_ABORT_THRESHOLD
+                or consecutive_failures >= CONSECUTIVE_FAILURE_CIRCUIT_BREAKER
+            ):
+                print(
+                    f"[PRICE-PROVIDER] Fiyat kaynakları art arda başarısız oldu "
+                    f"(transport={consecutive_transport_failures}, total={consecutive_failures}). "
+                    "Run erken DEGRADED olarak sonlandırılıyor."
+                )
                 break
             time.sleep(random.uniform(IY_MIN_DELAY, IY_MAX_DELAY))
             continue
 
         consecutive_failures = 0
+        consecutive_transport_failures = 0
         register_ticker_success(tk, dead_map)   # başarılı oldu, önceki strike geçmişi varsa temizle
 
         # Gerçekten alınıp satılamayacak kadar sığ olanları erkenden ele —
@@ -4114,8 +4235,26 @@ def main():
 
     print("Round 1: sayısal ön eleme başlıyor...")
     candidates_df = round1_screen(tickers)
+
+    # V5.26: eksik evreni "bugün fırsat yok" diye yayınlama. Veri sağlayıcı
+    # problemi varsa tüm state/history korunur, LLM kotası harcanmaz ve gruba
+    # açıkça teknik durum mesajı gider.
+    if ROUND1_HEALTH.get("degraded"):
+        cov = float(ROUND1_HEALTH.get("coverage") or 0.0) * 100
+        msg = (
+            "⚠️ BEIQ günlük taraması bugün veri sağlayıcı erişim sorunu nedeniyle tamamlanamadı.\n\n"
+            f"Fiyat/veri kapsamı: %{cov:.1f}. Mevcut takip listesi ve tezler korunmuştur; "
+            "yeni giriş/çıkış yapılmamıştır. Bu mesaj 'bugün uygun hisse yok' anlamına gelmez."
+        )
+        save_run_health("DEGRADED", msg)
+        send_telegram_message(msg)
+        print("[SCAN-DEGRADED] Normal günlük rapor bastırıldı; state/history değiştirilmedi.")
+        return
+
     if candidates_df.empty:
-        send_telegram_message("⚠️ Bugün likidite/veri filtresinden geçen hisse bulunamadı.")
+        msg = "ℹ️ Bugünkü sağlıklı taramada fırsat filtresinden geçen yeni aday bulunamadı. Mevcut tez takibi korunuyor."
+        save_run_health("OK_NO_CANDIDATES", msg)
+        send_telegram_message(msg)
         return
 
     # Değerleme hafızasını Gemini analizinden ÖNCE yükle. Böylece aynı veriyle
@@ -4261,6 +4400,7 @@ def main():
         for r in ranked[:15]
     ])
     _print_llm_health_summary()
+    save_run_health("OK", f"Günlük tarama tamamlandı; aktif fırsat sayısı={len(ranked)}")
     print("Tamamlandı.")
 
 
