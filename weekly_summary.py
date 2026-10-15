@@ -41,6 +41,7 @@ GROQ_MODEL = "openai/gpt-oss-120b"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
+RUN_HEALTH_FILE = os.path.join(os.path.dirname(__file__), "run_health.json")
 TR_TZ = timezone(timedelta(hours=3))
 
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -54,6 +55,15 @@ def load_history():
         except Exception:
             return []
     return []
+
+def load_run_health():
+    if os.path.exists(RUN_HEALTH_FILE):
+        try:
+            with open(RUN_HEALTH_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
 
 
 def this_week_entries(history):
@@ -188,9 +198,13 @@ HAFTALIK VERİ:
 
 def main():
     now = datetime.now(TR_TZ)
-    # Daily workflow elle çalıştırılsa bile haftalık özet yalnızca Cuma gider.
-    if now.weekday() != 4:  # 4 = Cuma
-        print("Bugün Cuma değil, haftalık özet atlanıyor.")
+    # Haftalık özet Cuma kapanışından sonra ya da Cumartesi erken saatte
+    # çalışabilir. Böylece UTC cron kayması nedeniyle Cuma 00:xx/01:xx'te
+    # eksik (Pzt-Perş) haftalık özet gönderilmez.
+    is_friday_after_close = (now.weekday() == 4 and now.hour >= 18)
+    is_saturday_carry = (now.weekday() == 5 and now.hour < 12)
+    if not (is_friday_after_close or is_saturday_carry):
+        print("Haftalık özet zamanı değil; Cuma 18:00 sonrası / Cumartesi erken saat penceresi bekleniyor.")
         return
 
     history = load_history()
@@ -198,6 +212,11 @@ def main():
     if not entries:
         print("Bu hafta için kayıt bulunamadı, haftalık özet atlanıyor.")
         return
+
+    run_health = load_run_health()
+    health_date = run_health.get("date")
+    health_status = run_health.get("status")
+    current_scan_degraded = (health_date == now.strftime("%Y-%m-%d") and health_status == "DEGRADED")
 
     agg = build_aggregate(entries)
     if not agg:
@@ -214,6 +233,13 @@ def main():
         print("[HAFTALIK-METODOLOJİ] Hafta içinde birden fazla scoring sürümü kullanıldı: " + ", ".join(versions))
     print(f"Bu hafta {len(entries)} günlük kayıt, {len(agg)} farklı hisse bulundu. LLM özeti isteniyor...")
     summary_text = summarize_with_gemini(agg, methodology_changed=methodology_changed)
+    if current_scan_degraded:
+        degraded_note = (
+            "Not: Bugünkü günlük tarama veri sağlayıcı erişim sorunu nedeniyle tamamlanamadı; "
+            "bu haftalık özet yalnızca başarıyla tamamlanan tarama günlerini içerir."
+        )
+        summary_text = degraded_note + (" " + summary_text if summary_text else "")
+        print("[HAFTALIK-VERİ-NOTU] Güncel günlük run DEGRADED; haftalık görsele veri eksikliği notu eklendi.")
     if methodology_changed and summary_text:
         # Model metodoloji uyarısını unutursa, kullanıcıya teknik kod vermeden tek sade cümle ekle.
         marker_words = ("metodoloji", "yöntem", "karşılaştırılabilir")
@@ -236,10 +262,10 @@ def main():
     message += "\n\nBu içerik karşılaştırmalı analiz özetidir; alım-satım çağrısı veya kişiye özel yatırım tavsiyesi içermez."
     try:
         weekly_png = render_weekly_report(entries, agg, summary_text=summary_text)
-        send_telegram_photo(
-            weekly_png,
-            caption=f"BEIQ | Haftalık Analiz Özeti | {entries[0]['date']} — {entries[-1]['date']}\nKarşılaştırmalı analizdir; yatırım tavsiyesi değildir."
-        )
+        weekly_caption = f"BEIQ | Haftalık Analiz Özeti | {entries[0]['date']} — {entries[-1]['date']}\nKarşılaştırmalı analizdir; yatırım tavsiyesi değildir."
+        if current_scan_degraded:
+            weekly_caption += "\n⚠️ Bugünkü günlük tarama veri sağlayıcı sorunu nedeniyle bu özete dahil değildir."
+        send_telegram_photo(weekly_png, caption=weekly_caption)
         print(f"Haftalık görsel Telegram'a gönderildi: {weekly_png}")
     except Exception as e:
         print(f"[GÖRSEL UYARI] Haftalık görsel üretilemedi/gönderilemedi: {e}")
@@ -249,4 +275,3 @@ def main():
 
 if __name__ == "__main__":
     main()
- 
