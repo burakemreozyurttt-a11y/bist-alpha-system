@@ -3061,6 +3061,83 @@
         "thesis_reused": false,
         "thesis_reanalysis_reason": "NEW_CANDIDATE"
       }
+    },
+    "ORGE": {
+      "analyzed_at": "2026-10-27",
+      "analysis_price": 18.53,
+      "input_fingerprint": "451e6594b5be23b61e2540215c04af03e102c8b0e864f8c7eada852c8e6a465c",
+      "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
+      "result": {
+        "alpha_score": 42,
+        "data_confidence": 85,
+        "bear_fv": 11.2,
+        "base_fv": 15.0,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "thesis_summary": "Şirket, 1.54 F/K ve 0.28 PD/DD gibi son derece düşük çarpanlarla işlem görürken, %-82.02'lik kâr ivmesi kaybı ve 0.28 nakit dönüşüm oranıyla değer tuzağı riski barındırmaktadır. Borçsuz bilanço yapısı aşağı yönlü riskleri kısmen sınırlar, ancak kârın nakde dönüşememesi adil değer artışını engellemektedir.",
+        "catalysts": [
+          "Hissenin 1.54 F/K ile işlem görmesi, mevcut kârlılık seviyesine kıyasla önemli bir iskonto barındırdığını ve güçlü bir defansif değerleme alanı sunduğunu göstermektedir.",
+          "Net finansal borç / özsermaye oranının -0.07 seviyesinde gerçekleşmesi, şirketin borçsuz yapısıyla finansal riskleri elimine ettiğini ve özkaynak büyümesini desteklediğini kanıtlamaktadır."
+        ],
+        "risks": [
+          "İşletme nakit akışının net kârın yalnızca %28'ini oluşturması, kâğıt üstündeki kazançların kasaya nakit olarak girmediğini ve ciddi bir tahsilat sorunu yaşandığını gösterir.",
+          "Net kâr büyümesi ivmesinin %-82.02 oranında sert düşüş göstermesi, mevcut kazançların hızla eriyeceğini ve gelecekteki operasyonel kârlılığın baskı altında kalacağını doğrular."
+        ],
+        "verdict": "WATCH",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.5-flash-lite",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "ilk değerleme"
+        ],
+        "ticker": "ORGE",
+        "name": "ORGE",
+        "price": 18.53,
+        "_bear_case": "ORGE, düşük F/K ve PD/DD oranlarıyla ucuz görünse de, %-82.02'lik keskin kâr büyümesi ivmesi kaybı ve 0.28 gibi son derece zayıf bir nakit dönüşüm oranıyla klasik bir değer tuzağı sinyali vermektedir. Brüt ve faaliyet marjlarındaki düşüşler ile kârın nakde yansımaması, mevcut kârlılığın sürdürülemez olduğunu ve hisse fiyatındaki düşüşün haklı bir temel temele dayandığını göstermektedir.",
+        "_bull_case": "ORGE, 1.54 F/K ve 0.28 PD/DD gibi aşırı düşük çarpanlarla işlem görürken %25.5 ciro ve %93.48 net kâr büyümesi yakalamıştır. Negatif net finansal borç yapısı ve düşen borçluluk oranı, şirketin bu güçlü finansal momentumu risksiz şekilde sürdürmesine zemin hazırlamaktadır.",
+        "_value_trap_risk": 75,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          }
+        },
+        "data_confidence_raw": 100,
+        "low_liquidity_flag": false,
+        "screening_score": 64.8,
+        "cap_bucket": "Küçük",
+        "score_valuation": 0.9234044894366198,
+        "score_momentum": 0.7911074740861975,
+        "score_acceleration": 0.39257341707689697,
+        "score_margin": 0.3039370576339737,
+        "score_balance": 0.8441844675154574,
+        "score_divergence": 0.3333333333333333,
+        "cfo_to_net_income": 0.28,
+        "roe": 0.1837,
+        "revenue_growth": 0.255,
+        "earnings_growth": 0.9348,
+        "revenue_acceleration": 0.0547,
+        "earnings_acceleration": -0.8202,
+        "gross_margin_trend": -0.0563,
+        "operating_margin_trend": -0.0735,
+        "net_debt_to_equity": -0.07,
+        "debt_to_equity": 0.64,
+        "_return_20d": -0.1638086642599278,
+        "_return_60d": -0.07994041708043687,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "NEW_CANDIDATE"
+      }
     }
   }
 }
