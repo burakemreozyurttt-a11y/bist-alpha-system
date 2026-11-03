@@ -3153,6 +3153,83 @@
         "thesis_reused": false,
         "thesis_reanalysis_reason": "NEW_CANDIDATE"
       }
+    },
+    "RALYH": {
+      "analyzed_at": "2026-11-04",
+      "analysis_price": 8.46,
+      "input_fingerprint": "5a7a61d7a5e4893918ae52b26fad52ab00173cb6a6b85e9b7433d0355d75964c",
+      "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
+      "result": {
+        "alpha_score": 42,
+        "data_confidence": 85,
+        "bear_fv": 3.5,
+        "base_fv": 6.2,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "thesis_summary": "Şirket, tarihi düşük çarpanlarına rağmen operasyonel ivmedeki sert çöküş ve marj daralmalarıyla klasik bir değer tuzağı riski barındırmaktadır. Güçlü nakit dönüşüm oranı ve azalan borçluluk yapısı kısmen destekleyici olsa da, operasyonel yavaşlama fiyatlamada temkinli duruşu zorunlu kılmaktadır.",
+        "catalysts": [
+          "Şirketin işletme nakit akışının net kâra oranı 1.36 seviyesindedir ve kârlılığın nakde dönüşüm kalitesini doğrulamaktadır.",
+          "Net finansal borcun özsermayeye oranı 0.40 seviyesine gerileyerek yıllık bazda deleveraging sürecini başarıyla desteklemektedir."
+        ],
+        "risks": [
+          "Faaliyet marjındaki %43.61 oranındaki keskin daralma, maliyet baskılarının kârlılık üzerinde ciddi bir tahribat yarattığını gösteriyor.",
+          "Ciro büyüme ivmesinin %-342.87 düzeyine çökmesi, ana faaliyet kollarındaki pazar kaybının ve yavaşlamanın derinleştiğine işaret eder."
+        ],
+        "verdict": "WATCH",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.5-flash-lite",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "ilk değerleme"
+        ],
+        "ticker": "RALYH",
+        "name": "RALYH",
+        "price": 8.46,
+        "_bear_case": "RALYH, cazip görünen 1.06 F/K ve 0.31 PD/DD oranlarına rağmen operasyonel ivmedeki dramatik çöküşle klasik bir değer tuzağındandır. Faaliyet marjındaki %43.61'lik sert düşüş ve %-246'yı bulan kâr ivmesi kaybı, ucuz fiyatın arkasında derinleşen bir kârlılık krizi olduğunu göstermektedir.",
+        "_bull_case": "Şirket, 1.06 F/K ve 0.31 PD/DD gibi son derece düşük değerleme çarpanlarına sahip olup, %29.38 ROE oranı ile özsermaye kârlılığını korumaktadır. Son dönemdeki aşırı fiyat düşüşleri (60 günlük %-96.52) temel göstergelerden kopuş yaratmış, 1.36 net kâr nakit dönüşüm oranı ise mevcut kârlılığın nakit yaratma kalitesini desteklediğini göstermektedir.",
+        "_value_trap_risk": 90,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          }
+        },
+        "data_confidence_raw": 100,
+        "low_liquidity_flag": false,
+        "screening_score": 66.9,
+        "cap_bucket": "Orta",
+        "score_valuation": 0.9289575289575289,
+        "score_momentum": 0.7361545682102628,
+        "score_acceleration": 0.064659936402087,
+        "score_margin": 0.4401991491520793,
+        "score_balance": 0.6719155093707263,
+        "score_divergence": 0.9620034542314335,
+        "cfo_to_net_income": 1.36,
+        "roe": 0.2938,
+        "revenue_growth": 0.6637,
+        "earnings_growth": 0.0304,
+        "revenue_acceleration": -3.4287,
+        "earnings_acceleration": -2.4601,
+        "gross_margin_trend": 0.0526,
+        "operating_margin_trend": -0.4361,
+        "net_debt_to_equity": 0.4,
+        "debt_to_equity": 1.01,
+        "_return_20d": -0.8642054574638844,
+        "_return_60d": -0.9651851851851851,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "NEW_CANDIDATE"
+      }
     }
   }
 }
