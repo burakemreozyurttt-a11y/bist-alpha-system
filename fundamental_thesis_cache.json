@@ -2,39 +2,39 @@
   "version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
   "tickers": {
     "ARDYZ": {
-      "analyzed_at": "2026-10-06",
-      "analysis_price": 68.0,
+      "analyzed_at": "2026-11-05",
+      "analysis_price": 53.8,
       "input_fingerprint": "c40775c0cafb6c2009d18b11ed26cce39ea9383438df8b65c7f13ca0be9a4708",
       "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
       "result": {
-        "alpha_score": 52.0,
+        "alpha_score": 58,
         "data_confidence": 85,
-        "bear_fv": 42.5,
+        "bear_fv": 35.5,
         "base_fv": 82.0,
         "bull_fv": null,
         "base_revision_status": "UNCHANGED",
         "base_revision_evidence": [],
         "upside_case_status": "UNSUPPORTED",
         "upside_evidence": [],
-        "thesis_summary": "Şirket, yüksek ciro ve kâr artışlarıyla operasyonel ivmesini korurken, mevcut fiyatlar geçmiş değerleme seviyelerini büyük ölçüde karşılamaktadır. Zayıflayan kısa vadeli momentum ve nakit dönüşümündeki eksikler, temkinli duruşu gerektiren ana unsurlardır.",
+        "thesis_summary": "Şirket, yüksek ciro ve kâr büyümesiyle operasyonel ivmesini korurken, son dönemdeki sert fiyat düşüşü değerleme açığı yaratmaktadır. Ancak işletme nakit akışındaki hafif sapma ve büyümenin sürdürülebilirliğine yönelik kuşkular risk unsuru olmaya devam etmektedir.",
         "catalysts": [
-          "Yıllık ciro artışının yüzde 187 seviyesine ulaşması, şirketin pazar payını hızla büyüttüğünü ve güçlü talep yakaladığını göstermektedir.",
-          "Faaliyet marjında kaydedilen yüzde 31 oranındaki iyileşme, maliyet disiplini sayesinde ölçek ekonomisinin verimli çalıştığına işaret eder."
+          "Yıllık yüzde 187 ciro ve yüzde 422 net kâr artışı, şirketin operasyonel ölçeklenebilirliğini hızla güçlendirmektedir.",
+          "Faaliyet marjındaki yüzde 31 oranındaki güçlü artış, maliyet disiplininin kârlılığa olumlu yansıdığını göstermektedir."
         ],
         "risks": [
-          "İşletme nakit akışının net kârın hafif gerisinde kalması, bilanço kârının nakde dönüşüm kalitesine yönelik soru işaretleri yaratmaktadır.",
-          "Yirmi günlük yüzde 16 değer kaybı ve 2.87 PD/DD çarpanı, kısa vadeli momentum kaybıyla birlikte değer tuzağı riskini artırmaktadır."
+          "İşletme nakit akışının net kârın yüzde 3 altında kalması, kâğıt üstündeki kazançların kasaya tam yansımadığını gösterir.",
+          "Son altmış günde yaşanan yüzde 34'lük sert fiyat gerilemesi, piyasanın büyüme oranlarına olan inancını zedelemektedir."
         ],
-        "verdict": "WATCH",
+        "verdict": "ATTRACTIVE",
         "_llm_provider": "gemini-primary",
         "_llm_model": "gemini-3.5-flash-lite",
         "fundamental_change_detected": false,
         "fundamental_change_evidence": [],
         "ticker": "ARDYZ",
         "name": "ARDYZ",
-        "price": 68.0,
-        "_bear_case": "ARDYZ, yüksek büyüme oranlarına rağmen 0.97 olan işletme nakit akışı/net kár oranı ile kárın tam olarak kasaya girmediğini göstermektedir. 20 günlük %-16.87'lik fiyat düşüşü ve 2.87 PD/DD oranı, mevcut büyümenin döngüsel bir zirvede olabileceğine ve önümüzdeki dönemde sert marj daralmaları yaşanabileceğine işaret eder.",
-        "_bull_case": "Şirket, %187 ciro ve %422 net kâr büyümesiyle güçlü bir finansal ivme yakalarken; faaliyet marjındaki %31.15'lik artış operasyonel verimliliğin hızla yükseldiğini göstermektedir. Düşük net borçluluk oranı ve yüksek nakde dönüşüm kalitesi, bu büyümenin sürdürülebilirliğini desteklemektedir.",
+        "price": 53.8,
+        "_bear_case": "ARDYZ hissesi, güçlü görünen geçmiş kâr büyümesinin döngüsel bir zirveyi işaret etmesi ve kısa vadeli fiyat hareketlerinde yüzde 34'ü bulan sert düşüşlerle yatırımcıyı cezbeden bir değer tuzağı potansiyeli taşımaktadır. İşletme nakit akışının net kârın altında kalması, kâğıt üstündeki kazançların kasaya tam olarak yansımadığını ve finansal kalitenin zayıfladığını göstermektedir.",
+        "_bull_case": "Şirket, %187 ciro ve %422 net kâr büyümesiyle operasyonel ivmesini güçlendirirken, 8.97 gibi cazip bir F/K çarpanında işlem görmektedir. 60 günlük %34'lük fiyat gerilemesi temel verilerle uyuşmamakta olup, kâr kalitesinin yüksek nakit dönüşümüyle desteklenmesi orta vadede güçlü bir toparlanma potansiyeli sunmaktadır.",
         "_value_trap_risk": 55,
         "llm_trace": {
           "bear": {
@@ -52,14 +52,14 @@
         },
         "data_confidence_raw": 100,
         "low_liquidity_flag": false,
-        "screening_score": 75.2,
+        "screening_score": 79.8,
         "cap_bucket": "Büyük",
-        "score_valuation": 0.32279072279072274,
-        "score_momentum": 0.9586426463736605,
-        "score_acceleration": 0.9766423357664233,
-        "score_margin": 0.8770740971195976,
-        "score_balance": 0.7033576218994428,
-        "score_divergence": 0.7184801381692574,
+        "score_valuation": 0.3550162513542795,
+        "score_momentum": 0.9561801274683941,
+        "score_acceleration": 0.9788321167883212,
+        "score_margin": 0.8784266362004244,
+        "score_balance": 0.7036556094669217,
+        "score_divergence": 0.986159169550173,
         "cfo_to_net_income": 0.97,
         "roe": 0.2531,
         "revenue_growth": 1.8702,
@@ -70,10 +70,10 @@
         "operating_margin_trend": 0.3115,
         "net_debt_to_equity": 0.22,
         "debt_to_equity": 0.66,
-        "_return_20d": -0.16870415647921755,
-        "_return_60d": 0.006661732050333047,
+        "_return_20d": -0.20882352941176474,
+        "_return_60d": -0.34270006108735496,
         "thesis_reused": false,
-        "thesis_reanalysis_reason": "FUNDAMENTAL_INPUT_CHANGED"
+        "thesis_reanalysis_reason": "PERIODIC_30D_REVIEW"
       }
     },
     "SANEL": {
