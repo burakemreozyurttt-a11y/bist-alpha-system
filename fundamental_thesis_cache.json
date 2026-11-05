@@ -460,28 +460,31 @@
       }
     },
     "AHGAZ": {
-      "analyzed_at": "2026-10-05",
-      "analysis_price": 45.6,
+      "analyzed_at": "2026-11-06",
+      "analysis_price": 46.0,
       "input_fingerprint": "9948d857448fb868049c2308e32ccf3081bdf05ad1272e33b78c607cfe5482e3",
       "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
       "result": {
-        "alpha_score": 64.0,
+        "alpha_score": 68,
         "data_confidence": 85,
         "bear_fv": 32.5,
         "base_fv": 48.0,
-        "bull_fv": null,
+        "bull_fv": 60.0,
         "base_revision_status": "UNCHANGED",
         "base_revision_evidence": [],
-        "upside_case_status": "UNSUPPORTED",
-        "upside_evidence": [],
-        "thesis_summary": "Şirket, güçlü nakit üretimi ve net kâr patlamasıyla operasyonel gücünü kanıtlarken, son dönemdeki sert fiyat artışı ve düşük özsermaye kârlılığı değerleme boşluğunu daraltmaktadır. Mevcut temel veri setinde yeni bir yukarı yönlü revizyon kanıtı bulunmadığından eski adil değer korunmaktadır.",
+        "upside_case_status": "SUPPORTED",
+        "upside_evidence": [
+          "Net kârda yüzde 109.71 oranında gerçekleşen yıllık artış",
+          "Brüt marjda sağlanan yüzde 7.47 oranındaki iyileşme"
+        ],
+        "thesis_summary": "Şirket, güçlü nakit yaratma kapasitesi ve brüt marjlarındaki belirgin iyileşme ile operasyonel olarak pozitif bir ivme yakalamıştır. Ancak düşük özsermaye kârlılığı ve mevcut çarpanların geçmiş seviyelere yakın seyretmesi, kısa vadede dikkatli bir değerleme disiplini gerektirmektedir.",
         "catalysts": [
-          "Net kârın yıllık yüzde 109 oranında artması, ana faaliyet kârlılığında güçlü bir sıçrama yaşandığını göstermektedir.",
-          "İşletme nakit akışının net kára oranı 2.76 olarak gerçekleşerek yüksek kalitede nakit yaratıldığını kanıtlamaktadır."
+          "Şirketin net kârı yıllık bazda yüzde 109.71 artarak operasyonel kârlılıkta güçlü bir ivme yakalandığını göstermiştir.",
+          "Brüt marjdaki yüzde 7.47 oranındaki artış, maliyet yönetimindeki başarının doğrudan finansallara yansıdığını kanıtlamaktadır."
         ],
         "risks": [
-          "Özsermaye kârlılığının yüzde 14.42 gibi zayıf bir seviyede kalması, sermayenin verimli kullanılamadığını göstermektedir.",
-          "Son 60 gündeki yüzde 23.19 oranındaki aşırı fiyat artışı, olası piyasa düzeltmelerine karşı aşağı yönlü risk taşımaktadır."
+          "Yüzde 14.42 seviyesindeki düşük özsermaye kârlılığı, mevcut piyasa değerlemesinin uzun vadeli sürdürülebilirliğini zayıflatmaktadır.",
+          "Bilançodaki 2.66 düzeyindeki yüksek borç oranı, olası faiz ve kur dalgalanmalarına karşı şirketin hassasiyetini artırmaktadır."
         ],
         "verdict": "WATCH",
         "_llm_provider": "gemini-primary",
@@ -490,34 +493,34 @@
         "fundamental_change_evidence": [],
         "ticker": "AHGAZ",
         "name": "AHGAZ",
-        "price": 45.6,
-        "_bear_case": "AHGAZ hissesi, %14.42 gibi oldukça düşük kalan özsermaye kârlılığına rağmen son dönemde sergilediği %23.19'luk 60 günlük aşırı fiyat artışıyla tipik bir değer tuzağı sinyali vermektedir. Zayıf kârlılık oranları ve yüksek kaldıraç riski göz önüne alındığında, mevcut coşkulu fiyat hareketleri sürdürülemez olup sert bir düzeltme potansiyeli taşımaktadır.",
-        "_bull_case": "Şirket, %109.71 net kâr büyümesi ve 2.76 gibi yüksek bir nakit dönüşüm oranıyla operasyonel verimliliğini kanıtlamaktadır. Negatif net finansal borç/özsermaye oranı (-0.28) ve güçlenen marjlar, önümüzdeki dönemde finansal esnekliği artırarak kârlılığın sürdürülebilirliğini destekleyecektir.",
-        "_value_trap_risk": 75,
+        "price": 46.0,
+        "_bear_case": "AHGAZ, %14.42 gibi düşük bir özsermaye karlılığına sahipken 1.66 PD/DD çarpanıyla işlem görmektedir ve bu durum mevcut rallinin sürdürülemez bir değer tuzağı barındırdığını göstermektedir. 2.66 seviyesindeki yüksek Borç/Özsermaye oranı, şirketin gelecekteki olası maliyet şoklarına karşı savunmasız olduğunu ve mevcut kârlılığın döngüsel bir zirvede tıkanabileceğini teyit etmektedir.",
+        "_bull_case": "AHGAZ, %20,59 ciro ve %109,71 net kâr büyümesiyle güçlü bir gelir artışı sağlıyor; kâr ivmesi %553,39 ile sürdürülebilir kârlılık sinyali veriyor. Marj iyileşmeleri ve net nakit pozisyonu, finansal esnekliği artırarak gelecek yıl %15 ROE hedefini destekliyor.",
+        "_value_trap_risk": 65,
         "llm_trace": {
           "bear": {
             "provider": "gemini-primary",
             "model": "gemini-3.5-flash-lite"
           },
           "bull": {
-            "provider": "gemini-primary",
-            "model": "gemini-3.5-flash-lite"
+            "provider": "groq",
+            "model": "openai/gpt-oss-120b"
           },
           "cro": {
             "provider": "gemini-primary",
             "model": "gemini-3.5-flash-lite"
           }
         },
-        "data_confidence_raw": 100.0,
+        "data_confidence_raw": 100,
         "low_liquidity_flag": false,
         "screening_score": 65.7,
         "cap_bucket": "Büyük",
-        "score_valuation": 0.38088578088578084,
-        "score_momentum": 0.7948905109489051,
-        "score_acceleration": 0.8542098115769818,
-        "score_margin": 0.7416063882191284,
-        "score_balance": 0.903065229115704,
-        "score_divergence": 0.2970639032815199,
+        "score_valuation": 0.31215012722646307,
+        "score_momentum": 0.7966331540799626,
+        "score_acceleration": 0.8563064351378957,
+        "score_margin": 0.7402319991673659,
+        "score_balance": 0.9063968969594431,
+        "score_divergence": 0.37823834196891193,
         "cfo_to_net_income": 2.76,
         "roe": 0.1442,
         "revenue_growth": 0.2059,
@@ -528,10 +531,10 @@
         "operating_margin_trend": 0.0223,
         "net_debt_to_equity": -0.28,
         "debt_to_equity": 2.66,
-        "_return_20d": 0.1486146095717884,
-        "_return_60d": 0.23190304706896225,
+        "_return_20d": -0.04166666666666663,
+        "_return_60d": 0.43729338907532034,
         "thesis_reused": false,
-        "thesis_reanalysis_reason": "FUNDAMENTAL_INPUT_CHANGED"
+        "thesis_reanalysis_reason": "PERIODIC_30D_REVIEW"
       }
     },
     "INDES": {
