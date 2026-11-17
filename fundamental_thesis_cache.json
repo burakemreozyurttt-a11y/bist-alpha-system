@@ -3388,6 +3388,162 @@
         "thesis_reused": false,
         "thesis_reanalysis_reason": "NEW_CANDIDATE"
       }
+    },
+    "AYGAZ": {
+      "analyzed_at": "2026-11-17",
+      "analysis_price": 275.0,
+      "input_fingerprint": "ebb8c183f8e03f0350ce162543c5c5c5be989eb212f9df2298258f37b426f41e",
+      "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
+      "result": {
+        "alpha_score": 52,
+        "data_confidence": 85,
+        "bear_fv": 165.0,
+        "base_fv": 290.0,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "thesis_summary": "Aygaz, 0.66 PD/DD ve 3.82 F/K gibi düşük çarpanlarına karşın reel ciro daralması ve nakde dönüşmeyen kârlılık yapısı nedeniyle belirgin bir değer tuzağı riski barındırmaktadır. Net nakit pozisyonu bilanço riskini sınırlasa da nakit akışı düzelmeden çarpan iskonto kapağının açılması zor görünmektedir.",
+        "catalysts": [
+          "Şirketin 0.66 PD/DD çarpanı ile defter değerinin altında işlem görmesi, varlık bazlı olası bir yeniden değerlemede fiyat esnekliği sağlar.",
+          "Net finansal borcun özsermayeye oranının negatif seyretmesi, yüksek faiz ortamında şirketin finansal maliyet baskısına karşı direncini artırmaktadır."
+        ],
+        "risks": [
+          "İşletme nakit akışının net kâra oranının negatif düzeyde kalması, raporlanan kârlılığın nakit üretmediğini ve kâr kalitesinin zayıf olduğunu gösterir.",
+          "Yıllık ciro büyümesinin %3.44 seviyesinde kalması, yüksek enflasyonist ortamda şirketin reel bazda hacim kaybettiğine işaret etmektedir."
+        ],
+        "verdict": "WATCH",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.6-flash",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "ilk değerleme"
+        ],
+        "ticker": "AYGAZ",
+        "name": "AYGAZ",
+        "price": 275.0,
+        "_bear_case": "Aygaz, 3.82 F/K ve 0.66 PD/DD oranlarıyla cazip bir değerleme sunuyor gibi görünse de, %3.44 gibi enflasyonun çok altında kalan ciro büyümesi ve -0.00 işletme nakit akışı/net kâr oranıyla tipik bir değer tuzağı sinyali vermektedir. Net kâr büyümesindeki %9.06'lık çeyreklik ivme kaybı ve nakde dönüşmeyen kâr yapısı, mevcut kârlılığın sürdürülemez olduğunu ve hissenin döngüsel zirvesinde olabileceğini açıkça göstermektedir.",
+        "_bull_case": "Aygaz, 3.82 gibi son derece cazip bir F/K oranı ve 0.66 PD/DD çarpanı ile işlem görürken, %233.29'luk güçlü yıllık net kâr büyümesi yakalamıştır. Net nakit pozisyonunda olan güçlü bilanço yapısı ve marjlarındaki hafif iyileşmeler, hissenin 60 günlük %18.40'lık düşüşünün ardından fundamental açıdan yukarı yönlü bir potansiyel barındırdığına işaret etmektedir.",
+        "_value_trap_risk": 75,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.6-flash"
+          }
+        },
+        "data_confidence_raw": 85,
+        "low_liquidity_flag": false,
+        "screening_score": 66.9,
+        "cap_bucket": "Büyük",
+        "score_valuation": 0.7624178846055915,
+        "score_momentum": 0.7624695670583254,
+        "score_acceleration": 0.5676883312472651,
+        "score_margin": 0.5568557331407866,
+        "score_balance": 0.775381404720783,
+        "score_divergence": 0.459412780656304,
+        "cfo_to_net_income": -0.0,
+        "roe": 0.1716,
+        "revenue_growth": 0.0344,
+        "earnings_growth": 2.3329,
+        "revenue_acceleration": 0.0407,
+        "earnings_acceleration": -0.0906,
+        "gross_margin_trend": 0.0041,
+        "operating_margin_trend": 0.0041,
+        "net_debt_to_equity": -0.05,
+        "debt_to_equity": 0.22,
+        "_return_20d": -0.008115419296663706,
+        "_return_60d": -0.18397626112759646,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "NEW_CANDIDATE"
+      }
+    },
+    "KRSTL": {
+      "analyzed_at": "2026-11-17",
+      "analysis_price": 5.71,
+      "input_fingerprint": "697a7fc1148cdc46e4bef5be14a814ad39b29b79b90dcb48d836d4448975396b",
+      "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
+      "result": {
+        "alpha_score": 58,
+        "data_confidence": 85,
+        "bear_fv": 3.4,
+        "base_fv": 6.2,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [
+          "İlk değerleme kapsamında 0.51 PD/DD ve %17.72 ROE seviyeleri temel alınarak taban fiyat hedefi belirlenmiştir."
+        ],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "thesis_summary": "KRSTL, düşük borçluluk yapısı ve cazip çarpanlarıyla önemli bir iskontoya işaret etse de zayıf nakit üretimi ve daralan operasyonel marjlar nedeniyle ivme kaybetmektedir. Fiyatın bilanço değerinin oldukça altında kalması dip arayışını desteklerken kâr kalitesindeki bozulma yakından izlenmelidir.",
+        "catalysts": [
+          "Şirketin net finansal borç/özsermaye oranının %0.03 seviyesinde bulunması, yüksek faiz ortamında bilanço üzerindeki finansal baskıyı en aza indirmektedir.",
+          "PD/DD oranının 0.51 ve F/K çarpanının 2.85 seviyesinde olması, hissenin tarihsel ortalamalarına göre ciddi bir değerleme iskontosu barındırdığına işaret eder."
+        ],
+        "risks": [
+          "İşletme nakit akışının net kâra oranının 0.32'de kalması, elde edilen kârın nakde dönüşmekte zorlandığını ve kâr kalitesinin düştüğünü gösterir.",
+          "Çeyreklik kâr büyüme ivmesinin %-30.75'e gerilemesi ve marjlardaki daralma, operasyonel kârlılığın tepe noktasından aşağıya doğru çekilme riskini artırmaktadır."
+        ],
+        "verdict": "WATCH",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.6-flash",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "ilk değerleme"
+        ],
+        "ticker": "KRSTL",
+        "name": "KRSTL",
+        "price": 5.71,
+        "_bear_case": "KRSTL, %2.85 Trailing F/K ve 0.51 PD/DD oranlarıyla ucuz görünse de, %-30.75'e varan kâr büyüme ivmesi kaybı ve 0.32 gibi düşük bir işletme nakit akışı/net kâr oranı ile klasik bir değer tuzağı sinyali vermektedir. Brüt ve faaliyet marjlarındaki daralma ile 60 günlük %-38.20'lik sert fiyat düşüşü, mevcut kârlılığın sürdürülemez olduğunu ve döngüsel zirvede bulunulduğunu açıkça göstermektedir.",
+        "_bull_case": "KRSTL, 0.51 PD/DD ve 2.85 F/K gibi oldukça düşük çarpanlarla işlem görürken, %44.29'luk güçlü yıllık net kâr büyümesi potansiyeli barındırmaktadır. Düşük borçluluk oranı ve %17.72 ROE seviyesi, son dönemde yaşanan fiyat düşüşlerinin ardından fundamental açıdan cazip bir iskontoya işaret etmektedir.",
+        "_value_trap_risk": 82,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.6-flash"
+          }
+        },
+        "data_confidence_raw": 100,
+        "low_liquidity_flag": false,
+        "screening_score": 66.8,
+        "cap_bucket": "Küçük",
+        "score_valuation": 0.816774456383358,
+        "score_momentum": 0.6899809463321689,
+        "score_acceleration": 0.35456441880107054,
+        "score_margin": 0.3797787014811779,
+        "score_balance": 0.7335600172711572,
+        "score_divergence": 0.8704663212435233,
+        "cfo_to_net_income": 0.32,
+        "roe": 0.1772,
+        "revenue_growth": 0.078,
+        "earnings_growth": 0.4429,
+        "revenue_acceleration": -0.1374,
+        "earnings_acceleration": -0.3075,
+        "gross_margin_trend": -0.0341,
+        "operating_margin_trend": -0.039,
+        "net_debt_to_equity": 0.03,
+        "debt_to_equity": 0.46,
+        "_return_20d": -0.1736613603473227,
+        "_return_60d": -0.38203463203463206,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "NEW_CANDIDATE"
+      }
     }
   }
 }
