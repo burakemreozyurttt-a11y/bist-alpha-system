@@ -232,67 +232,68 @@
       }
     },
     "TCKRC": {
-      "analyzed_at": "2026-09-29",
-      "analysis_price": 118.7,
+      "analyzed_at": "2026-11-20",
+      "analysis_price": 125.0,
       "input_fingerprint": "1f985ddc5c6887738258a18d4b25e5baa6c7288ebe5ef12d9129f76796f848d7",
-      "cache_version": "PERSISTENT_MULTI_AGENT_V2_MULTI_PROVIDER",
+      "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
       "result": {
-        "alpha_score": 45,
+        "alpha_score": 48,
         "data_confidence": 85,
-        "bear_fv": 70,
-        "base_fv": 150.0,
-        "bull_fv": 170.0,
+        "bear_fv": 85.0,
+        "base_fv": 130.0,
+        "bull_fv": null,
         "base_revision_status": "UNCHANGED",
-        "base_revision_evidence": [],
-        "upside_case_status": "SUPPORTED",
-        "upside_evidence": [
-          "2024 yılı çeyreklik dönemde ciro büyümesinin %159.82 ve net kâr büyümesinin %103.72 seviyesine ulaşması",
-          "Faaliyet marjının %23.09 oranında artış göstererek operasyonel verimliliği ve kârlılığı güçlendirmesi"
+        "base_revision_evidence": [
+          "İlk değerleme kapsamındaki veriler ışığında belirlenen adil değer."
         ],
-        "thesis_summary": "Şirket, yüksek ciro büyümesi ve operasyonel marj artışlarıyla güçlü bir operasyonel performans sergilesede, işletme nakit akışının net kârı desteklememesi likidite risklerini artırmaktadır. Güncel fiyat, önceki temel değerleme seviyesine yaklaşmış olup, yeni bir finansal kanıt oluşmadığı için taban değer korunmuştur.",
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "thesis_summary": "TCKRC, güçlü operasyonel ivmesi ve genişleyen marjlarıyla öne çıksa da kârın nakde dönüşümündeki belirgin zayıflık değerleme üzerinde baskı oluşturmaktadır. Mevcut fiyat düzeyi operasyonel başarıları büyük ölçüde fiyatlamış olup, hissenin cazip bir fırsat sunabilmesi için nakit akışı kalitesinde somut iyileşme gerekmektedir.",
         "catalysts": [
-          "Ciro büyümesinin %159.82 oranına ulaşması, şirketin pazar payını genişlettiğini ve operasyonel hacmin hızla büyüdüğünü gösterir.",
-          "Faaliyet marjındaki %23.09 artış, maliyetlerin etkin yönetildiğini ve operasyonel kârlılık potansiyelinin güçlendiğini doğrular."
+          "%159.8'lik yıllık ciro artışı ve %23.1'lik faaliyet marjı genişlemesi, şirketin güçlü operasyonel ölçek ekonomisi yakaladığına işaret etmektedir.",
+          "Düşük borçluluk oranı (%32 Borç/Özsermaye) ve %31.5 ROE, agresif büyüme döneminde bilançonun finansal esnekliğini korumasını sağlamaktadır."
         ],
         "risks": [
-          "İşletme nakit akışının net kârın yalnızca %25'i kadar gerçekleşmesi, elde edilen kârların nakde dönüşümünde zayıflık yaratmaktadır.",
-          "Yıllık deleveraj oranının eksi yönlü seyretmesi ve borçlanmanın artması, olası likidite daralmalarında finansal yükü ağırlaştırabilir."
+          "İşletme nakit akışının net kâra oranının %0.25 seviyesinde kalması, raporlanan kazançların nakde dönüşmeyerek kâr kalitesini düşürdüğünü gösterir.",
+          "Son 60 günlük %26'lık fiyat düşüşü, piyasada döngüsel tepe endişeleri ve nakit akışı zafiyetine dair risk fiyatlamasını yansıtmaktadır."
         ],
         "verdict": "WATCH",
         "_llm_provider": "gemini-primary",
-        "_llm_model": "gemini-3.5-flash-lite",
-        "fundamental_change_detected": false,
-        "fundamental_change_evidence": [],
+        "_llm_model": "gemini-3.6-flash",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "ilk değerleme"
+        ],
         "ticker": "TCKRC",
         "name": "TCKRC",
-        "price": 118.7,
-        "_bear_case": "Kâr kalitesi bozulup işletme nakit akışı negatif seviyelere düşer, marjlar daralır ve borçlanma artışı likiditeyi zorlar; büyüme hızı durur ve hisse fiyatı %40‑50 düşerek 70 TL civarına geriler.",
-        "_bull_case": "TCKRC, 2024 YTD %159.82 ciro büyümesi ve %23.09 faaliyet marjı artışıyla güçlü bir büyüme hızı sergiliyor. Düşük borçluluk ve yüksek ROE, şirketin finansal sağlığını destekliyor. Bu koşullar altında, fiyatın 170 TL'ye kadar yükselmesi mantıklı bir senaryo.",
+        "price": 125.0,
+        "_bear_case": "TCKRC, %159'luk yüksek ciro büyümesine rağmen işletme nakit akışının net kârın sadece %25'i seviyesinde gerçekleşmesiyle ciddi bir kâr kalitesi sorunu yaşamaktadır. Kağıt üzerindeki kârların kasaya nakit olarak girememesi ve 60 günlük %26.04'lük sert fiyat düşüşü, mevcut değerlemenin sürdürülemez bir değer tuzağına işaret ettiğini göstermektedir.",
+        "_bull_case": "TCKRC, %159'u aşan ciro büyümesi ve hızlanan çeyreklik ivmesiyle operasyonel gücünü kanıtlamaktadır. Düşük borçluluk yapısı ve güçlü marj genişlemesi, şirketin bu büyüme momentumunu kârlılığa dönüştürmesini desteklemektedir.",
         "_value_trap_risk": 75,
         "llm_trace": {
           "bear": {
-            "provider": "groq",
-            "model": "openai/gpt-oss-120b"
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
           },
           "bull": {
-            "provider": "groq",
-            "model": "openai/gpt-oss-20b"
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
           },
           "cro": {
             "provider": "gemini-primary",
-            "model": "gemini-3.5-flash-lite"
+            "model": "gemini-3.6-flash"
           }
         },
-        "data_confidence_raw": 100,
+        "data_confidence_raw": 85,
         "low_liquidity_flag": false,
-        "screening_score": 72.8,
+        "screening_score": 71.3,
         "cap_bucket": "Büyük",
-        "score_valuation": 0.4434650620697132,
-        "score_momentum": 0.8783567550718236,
-        "score_acceleration": 0.8736886776438635,
-        "score_margin": 0.871108209564224,
-        "score_balance": 0.6570396809545592,
-        "score_divergence": 0.6863084922010398,
+        "score_valuation": 0.35353159851301114,
+        "score_momentum": 0.8929818990155605,
+        "score_acceleration": 0.9046880564968303,
+        "score_margin": 0.8695252684919565,
+        "score_balance": 0.6630960947994626,
+        "score_divergence": 0.6459412780656304,
         "cfo_to_net_income": 0.25,
         "roe": 0.315,
         "revenue_growth": 1.5982,
@@ -303,10 +304,10 @@
         "operating_margin_trend": 0.2309,
         "net_debt_to_equity": 0.11,
         "debt_to_equity": 0.32,
-        "_return_20d": -0.19579945799457987,
-        "_return_60d": -0.11549925484351709,
+        "_return_20d": 0.19617224880382778,
+        "_return_60d": -0.2603550295857988,
         "thesis_reused": false,
-        "thesis_reanalysis_reason": "LEGACY_BOOTSTRAP_REVIEW"
+        "thesis_reanalysis_reason": "PERIODIC_30D_REVIEW"
       }
     },
     "TUPRS": {
