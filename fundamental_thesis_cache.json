@@ -2462,41 +2462,43 @@
       }
     },
     "EKDMR": {
-      "analyzed_at": "2026-10-05",
-      "analysis_price": 30.42,
+      "analyzed_at": "2026-11-27",
+      "analysis_price": 20.28,
       "input_fingerprint": "d259d30e96627e5f36f3050a67e737d1f747cb11eedaf020b5e5b84a03017f7c",
       "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
       "result": {
         "alpha_score": 42,
         "data_confidence": 85,
-        "bear_fv": 18.5,
-        "base_fv": 26.0,
+        "bear_fv": 12.5,
+        "base_fv": 22.5,
         "bull_fv": null,
         "base_revision_status": "UNCHANGED",
-        "base_revision_evidence": [],
+        "base_revision_evidence": [
+          "İlk analiz olması sebebiyle temel rasyolar ve nakit akış kalitesi referans alınmıştır."
+        ],
         "upside_case_status": "UNSUPPORTED",
         "upside_evidence": [],
-        "thesis_summary": "Şirket, düşük defter değeri çarpanına rağmen negatif işletme nakit akışı ve zayıf özkaynak kârlılığı nedeniyle derin değer tuzağı riski barındırmaktadır. Hızlı kâr ivmesi toparlanma sinyali verse de, nakit yaratma kalitesindeki kronik bozulma ihtiyatlı bir duruşu zorunlu kılmaktadır.",
+        "thesis_summary": "EKDMR, 0.39 PD/DD oranı ve %107,75 çeyreklik kâr ivmelenmesiyle varlık bazında iskonto sunsa da, %3,80 ROE ve olumsuz nakit dönüşümü nedeniyle değer tuzağı riski taşımaktadır. Son 60 gündeki %56,48'lik düşüş fiyatlama dengesi yaratsa da operasyonel kârın nakde dönüşmemesi yukarı yönlü potansiyeli sınırlandırmaktadır.",
         "catalysts": [
-          "Çeyreklik net kâr büyüme ivmesinin yüzde 107 seviyesine ulaşması, operasyonel dip seviyelerden kademeli bir toparlanma potansiyeli barındırmaktadır.",
-          "Son altmış günde yaşanan yüzde 45 oranındaki sert fiyat düşüşü, bilanço risklerinin önemli bir kısmının piyasa tarafından önceden fiyatlandığını göstermektedir."
+          "Çeyreklik kâr büyüme ivmesinin %107.75 seviyesine ulaşması, operasyonel dip seviyelerden toparlanma emareleri sunmaktadır.",
+          "Net finansal borcun özsermayeye oranının %9 gibi oldukça düşük kalması, olası borçlanma baskılarına karşı bilançoya esneklik sağlamaktadır."
         ],
         "risks": [
-          "İşletme nakit akışının net kâra oranının eksi 3.77 olması, raporlanan kârların nakde dönüşmediğini ve finansal kalitenin zayıf kaldığını kanıtlamaktadır.",
-          "Yüzde 3.80 seviyesindeki çok düşük özkaynak kârlılığı, şirketin mevcut sermayesini enflasyon karşısında koruyamadığını ve değer üretemediğini göstermektedir."
+          "İşletme nakit akışının net kâra oranının -3.77 olması, muhasebeleştirilen kazançların nakde dönüşmediğini ve finansal yapıyı zorladığını gösterir.",
+          "Özkaynak kârlılığının %3.80 seviyesinde kalması, şirketin sermaye birikim gücünün enflasyon karşısında yetersiz kaldığına işaret etmektedir."
         ],
         "verdict": "WATCH",
         "_llm_provider": "gemini-primary",
-        "_llm_model": "gemini-3.5-flash-lite",
+        "_llm_model": "gemini-3.6-flash",
         "fundamental_change_detected": true,
         "fundamental_change_evidence": [
           "ilk değerleme"
         ],
         "ticker": "EKDMR",
         "name": "EKDMR",
-        "price": 30.42,
-        "_bear_case": "EKDMR, yüzde 3.80 gibi son derece düşük bir özkaynak kârlılığıyla sermaye maliyetinin çok altında kalırken, yüzde -3.77 seviyesindeki işletme nakit akışı/net kâr oranı kârların tamamen kâğıt üzerinde kaldığını ve nakde dönüşmediğini net biçimde göstermektedir. 0.58 PD/DD oranı ucuz görünse de, azalan faaliyet marjları ve dramatik hisse düşüşleriyle birleştiğinde derin bir değer tuzağına işaret etmektedir.",
-        "_bull_case": "EKDMR hisseleri son dönemde yaşadığı yüzde 45'lik sert 60 günlük geri çekilme ile temel değerinden oldukça uzaklaşmış ve güçlü bir dip arayışına girmiştir. Çeyreklik bazda yüzde 107'ye ulaşan kâr büyümesi ivmesi, şirketin operasyonel toparlanma potansiyelini ve gelecekteki nakit yaratma kapasitesini desteklemektedir.",
+        "price": 20.28,
+        "_bear_case": "EKDMR hissesi, yüzde 3.8 gibi son derece düşük bir özkaynak kârlılığı ile çalışırken, işletme nakit akışının net kârı karşılamaktan çok uzak olması şirketin kazanç kalitesini sıfırlamaktadır. 0.39'luk düşük PD/DD oranı ucuzluk değil, piyasanın bu varlıklardaki değer erimesini ve kârsızlığı fiyatladığı klasik bir değer tuzağına işaret etmektedir.",
+        "_bull_case": "EKDMR hisseleri, 0.39 gibi oldukça düşük bir PD/DD oranı ve yıllık bazda %107.75'e ulaşan kâr büyüme ivmesiyle güçlü bir toparlanma potansiyeli barındırmaktadır. 60 günlük %56.48'lik sert fiyat düşüşü, temel verilerdeki hızlanma ile birleştiğinde orta vadede cazip bir iskonto yaratmaktadır.",
         "_value_trap_risk": 85,
         "llm_trace": {
           "bear": {
@@ -2509,19 +2511,19 @@
           },
           "cro": {
             "provider": "gemini-primary",
-            "model": "gemini-3.5-flash-lite"
+            "model": "gemini-3.6-flash"
           }
         },
         "data_confidence_raw": 100,
         "low_liquidity_flag": false,
-        "screening_score": 66.0,
+        "screening_score": 67.9,
         "cap_bucket": "Orta",
-        "score_valuation": 0.45542906705697406,
-        "score_momentum": 0.6708080964953149,
-        "score_acceleration": 0.8343574944831098,
-        "score_margin": 0.49498975914547194,
-        "score_balance": 0.5577288428324698,
-        "score_divergence": 0.9550949913644214,
+        "score_valuation": 0.5163203529834283,
+        "score_momentum": 0.6807928442891924,
+        "score_acceleration": 0.864908263882529,
+        "score_margin": 0.47698547443878514,
+        "score_balance": 0.5648100172711572,
+        "score_divergence": 0.9568221070811744,
         "cfo_to_net_income": -3.77,
         "roe": 0.038,
         "revenue_growth": 0.2815,
@@ -2532,10 +2534,10 @@
         "operating_margin_trend": -0.0207,
         "net_debt_to_equity": 0.09,
         "debt_to_equity": 0.53,
-        "_return_20d": -0.3401301518438178,
-        "_return_60d": -0.4523852385238524,
+        "_return_20d": -0.04429783223374162,
+        "_return_60d": -0.5648068669527897,
         "thesis_reused": false,
-        "thesis_reanalysis_reason": "NEW_CANDIDATE"
+        "thesis_reanalysis_reason": "PERIODIC_30D_REVIEW"
       }
     },
     "VBTYZ": {
@@ -3696,6 +3698,83 @@
         "debt_to_equity": 1.49,
         "_return_20d": -0.3171856978085352,
         "_return_60d": -0.16787315688121107,
+        "thesis_reused": false,
+        "thesis_reanalysis_reason": "NEW_CANDIDATE"
+      }
+    },
+    "KMPUR": {
+      "analyzed_at": "2026-11-27",
+      "analysis_price": 10.05,
+      "input_fingerprint": "a23fa1b9e57a4ea32e31eb65075c1ac6467a0fe7be745dd334ecf301935e4721",
+      "cache_version": "PERSISTENT_MULTI_AGENT_V3_STABILITY_GUARD",
+      "result": {
+        "alpha_score": 54,
+        "data_confidence": 85,
+        "bear_fv": 6.5,
+        "base_fv": 11.5,
+        "bull_fv": null,
+        "base_revision_status": "UNCHANGED",
+        "base_revision_evidence": [],
+        "upside_case_status": "UNSUPPORTED",
+        "upside_evidence": [],
+        "thesis_summary": "Sert fiyat düşüşü sonrası ucuz çarpanlara ulaşan şirket, operasyonel marjlardaki toparlanmaya rağmen belirgin bir nakit üretimi sorunu yaşamaktadır. Muhasebe kârının kasaya girmemesi ve yüksek borç yükü, şirketin mevcut değerleme fırsatını gölgeleyerek değer tuzağı riskini artırmaktadır.",
+        "catalysts": [
+          "Çeyreklik ciro büyüme ivmesindeki yüzde 13.57'lik artış, operasyonel satış hacimlerinde kademeli bir toparlanma sürecine işaret etmektedir.",
+          "Brüt kâr marjının yıllık yüzde 5.19 oranında genişlemesi, şirketin maliyet yönetimi kapasitesini artırarak operasyonel kârlılığı güçlendirmektedir."
+        ],
+        "risks": [
+          "İşletme nakit akışının net kâra oranının -1.70 seviyesinde kalması, muhasebeleştirilen kârın nakde dönüşmediğini ve likidite riski yarattığını gösterir.",
+          "Net finansal borcun özsermayeye oranının 1.28 seviyesinde yüksek seyretmesi, yüksek faiz ortamında şirketin bilanço kırılganlığını artırmaktadır."
+        ],
+        "verdict": "WATCH",
+        "_llm_provider": "gemini-primary",
+        "_llm_model": "gemini-3.6-flash",
+        "fundamental_change_detected": true,
+        "fundamental_change_evidence": [
+          "ilk değerleme"
+        ],
+        "ticker": "KMPUR",
+        "name": "KMPUR",
+        "price": 10.05,
+        "_bear_case": "KMPUR hissesi ucuz görünümüne rağmen yüksek borç yükü ve kâğıt üstündeki kârın nakde dönüşmemesi nedeniyle klasik bir değer tuzağı sinyali vermektedir. İşletme nakit akışının net kârın çok gerisinde kalması ve son dönemde hisse fiyatındaki sert %45'lik 60 günlük çöküş, operasyonel risklerin derinleştiğini göstermektedir.",
+        "_bull_case": "KMPUR hissesindeki son dönem sert fiyat düşüşleri (60 günlük %-45) cazip bir değerleme (0.65) sunarken, brüt marjdaki %5.19'luk iyileşme ve çeyreklik ciro büyüme ivmesindeki %13.57'lik artış operasyonel toparlanmanın sinyallerini vermektedir. Borçluluk oranındaki yıllık 0.51'lik azalış (deleveraging) bilanço risklerini hafifletmektedir.",
+        "_value_trap_risk": 78,
+        "llm_trace": {
+          "bear": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "bull": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.5-flash-lite"
+          },
+          "cro": {
+            "provider": "gemini-primary",
+            "model": "gemini-3.6-flash"
+          }
+        },
+        "data_confidence_raw": 85,
+        "low_liquidity_flag": false,
+        "screening_score": 64.6,
+        "cap_bucket": "Orta",
+        "score_valuation": 0.6520342722282079,
+        "score_momentum": 0.4950354609929078,
+        "score_acceleration": 0.6009107468123862,
+        "score_margin": 0.7873124134028062,
+        "score_balance": 0.5711139896373056,
+        "score_divergence": 0.917098445595855,
+        "cfo_to_net_income": -1.7,
+        "roe": 0.1776,
+        "revenue_growth": 0.0006,
+        "earnings_growth": null,
+        "revenue_acceleration": 0.1357,
+        "earnings_acceleration": null,
+        "gross_margin_trend": 0.0519,
+        "operating_margin_trend": 0.0901,
+        "net_debt_to_equity": 1.28,
+        "debt_to_equity": 2.42,
+        "_return_20d": -0.11531690140845063,
+        "_return_60d": -0.4543973941368078,
         "thesis_reused": false,
         "thesis_reanalysis_reason": "NEW_CANDIDATE"
       }
